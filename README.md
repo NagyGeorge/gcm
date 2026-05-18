@@ -52,7 +52,9 @@ unit-awards-tracker gcm \
 - Good Conduct Medal eligibility recurs every 3 calendar months.
 - Members with no prior GCM become eligible after 3 months time in service.
 - Members with a prior GCM become eligible 3 months after the most recent GCM.
-- Eligibility is calculated against the supplied ceremony date, not the current date.
+- If eligibility falls at any point in the ceremony month, the member is due at
+  that month's ceremony.
+- Eligibility is calculated against the supplied ceremony month, not the current date.
 - Non-active-duty personnel are ignored unless configured otherwise.
 
 ## Report Columns

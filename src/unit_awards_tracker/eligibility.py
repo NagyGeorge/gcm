@@ -60,6 +60,18 @@ def newest_gcm_date(awards: tuple[AwardRecord, ...]) -> date | None:
     return max(gcm_dates, default=None)
 
 
+def is_due_by_ceremony_month(next_eligible_date: date, ceremony_date: date) -> bool:
+    """Return whether eligibility falls on or before the ceremony month."""
+
+    return (
+        next_eligible_date.year,
+        next_eligible_date.month,
+    ) <= (
+        ceremony_date.year,
+        ceremony_date.month,
+    )
+
+
 def calculate_gcm_eligibility(
     member: Member,
     ceremony_date: date,
@@ -69,11 +81,11 @@ def calculate_gcm_eligibility(
     last_gcm_date = newest_gcm_date(member.awards)
     if last_gcm_date is not None:
         next_eligible_date = last_gcm_date + relativedelta(months=GCM_INTERVAL_MONTHS)
-        eligible = next_eligible_date <= ceremony_date
+        eligible = is_due_by_ceremony_month(next_eligible_date, ceremony_date)
         reason = (
-            "Most recent GCM is at least 3 calendar months before ceremony date."
+            "Most recent GCM is due on or before the ceremony month."
             if eligible
-            else "Most recent GCM is less than 3 calendar months before ceremony date."
+            else "Most recent GCM is not due until after the ceremony month."
         )
         return EligibilityResult(
             member=member,
@@ -97,11 +109,11 @@ def calculate_gcm_eligibility(
 
     service_start_date = ceremony_date - tis
     next_eligible_date = service_start_date + relativedelta(months=GCM_INTERVAL_MONTHS)
-    eligible = next_eligible_date <= ceremony_date
+    eligible = is_due_by_ceremony_month(next_eligible_date, ceremony_date)
     reason = (
-        "No prior GCM and time in service is at least 3 calendar months."
+        "No prior GCM and initial eligibility falls on or before the ceremony month."
         if eligible
-        else "No prior GCM and time in service is less than 3 calendar months."
+        else "No prior GCM and initial eligibility falls after the ceremony month."
     )
     return EligibilityResult(
         member=member,

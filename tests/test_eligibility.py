@@ -30,6 +30,16 @@ def test_no_prior_gcm_and_tis_under_three_months_is_not_eligible() -> None:
     assert result.next_eligible_date == date(2026, 6, 18)
 
 
+def test_no_prior_gcm_due_later_in_ceremony_month_is_eligible() -> None:
+    result = calculate_gcm_eligibility(
+        _member(time_in_service_text="2 months, 20 days"),
+        date(2026, 6, 7),
+    )
+
+    assert result.eligible is True
+    assert result.next_eligible_date == date(2026, 6, 18)
+
+
 def test_no_prior_gcm_and_tis_over_three_months_is_eligible() -> None:
     result = calculate_gcm_eligibility(
         _member(time_in_service_text="3 months, 1 day"),
@@ -58,7 +68,7 @@ def test_last_gcm_exactly_three_months_before_ceremony_is_eligible() -> None:
     assert result.next_eligible_date == date(2026, 5, 18)
 
 
-def test_last_gcm_less_than_three_months_before_ceremony_is_not_eligible() -> None:
+def test_last_gcm_due_later_in_ceremony_month_is_eligible() -> None:
     result = calculate_gcm_eligibility(
         _member(
             awards=(
@@ -68,11 +78,28 @@ def test_last_gcm_less_than_three_months_before_ceremony_is_not_eligible() -> No
                 ),
             )
         ),
+        date(2026, 6, 7),
+    )
+
+    assert result.eligible is True
+    assert result.next_eligible_date == date(2026, 6, 1)
+
+
+def test_last_gcm_due_after_ceremony_month_is_not_eligible() -> None:
+    result = calculate_gcm_eligibility(
+        _member(
+            awards=(
+                AwardRecord(
+                    name="Good Conduct Medal",
+                    awarded_date=date(2026, 4, 1),
+                ),
+            )
+        ),
         date(2026, 5, 18),
     )
 
     assert result.eligible is False
-    assert result.next_eligible_date == date(2026, 6, 1)
+    assert result.next_eligible_date == date(2026, 7, 1)
 
 
 def test_missing_tis_without_prior_gcm_is_not_eligible() -> None:
