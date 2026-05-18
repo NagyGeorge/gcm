@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date
 from urllib.parse import urljoin
 
-from dateutil.parser import ParserError, parse
 from playwright.sync_api import (
     Page,
     sync_playwright,
@@ -17,17 +15,7 @@ from playwright.sync_api import (
 from unit_awards_tracker.config import ScraperConfig
 from unit_awards_tracker.eligibility import GCM_NAME
 from unit_awards_tracker.models import AwardRecord, Member
-
-
-def parse_award_date(raw_date: str | None) -> date | None:
-    """Parse an award date, returning None for missing or malformed values."""
-
-    if not raw_date or not raw_date.strip():
-        return None
-    try:
-        return parse(raw_date, fuzzy=True).date()
-    except (ParserError, OverflowError, ValueError):
-        return None
+from unit_awards_tracker.text_utils import clean_status_text, parse_award_date
 
 
 class UnitRosterScraper:
@@ -43,38 +31,57 @@ class UnitRosterScraper:
             browser = playwright.chromium.launch(headless=self._config.headless)
             page = browser.new_page()
             try:
-                page.goto(roster_url, wait_until="networkidle")
+                page.goto(roster_url, wait_until="domcontentloaded")
                 profile_links = self._collect_profile_links(page, roster_url)
                 return [self._scrape_profile(page, link) for link in profile_links]
             finally:
                 browser.close()
 
     def _collect_profile_links(self, page: Page, roster_url: str) -> list[str]:
-        rows = page.locator(self._config.roster_row_selector)
         profile_urls: list[str] = []
+        containers = self._profile_link_containers(page)
 
-        for index in range(rows.count()):
-            row = rows.nth(index)
-            row_text = row.inner_text().strip()
-            if (
-                not self._config.include_non_active_duty
-                and self._config.active_duty_text.lower() not in row_text.lower()
-            ):
-                continue
+        for container in containers:
+            rows = container.locator(self._config.roster_row_selector)
+            for index in range(rows.count()):
+                row = rows.nth(index)
+                row_text = row.inner_text().strip()
+                if (
+                    not self._config.include_non_active_duty
+                    and self._config.active_duty_text.lower() not in row_text.lower()
+                ):
+                    continue
 
-            link = row.locator(self._config.profile_link_selector).first
-            if link.count() == 0:
-                continue
-            href = link.get_attribute("href")
-            if href:
-                profile_urls.append(urljoin(roster_url, href))
+                link = row.locator(self._config.profile_link_selector).first
+                if link.count() == 0:
+                    continue
+                href = link.get_attribute("href")
+                if href:
+                    profile_urls.append(urljoin(roster_url, href))
 
         return sorted(set(profile_urls))
 
+    def _profile_link_containers(self, page: Page):
+        section_text = self._config.roster_section_text
+        if not section_text:
+            return [page]
+
+        matching_sections = []
+        sections = page.locator(self._config.roster_section_selector)
+        for index in range(sections.count()):
+            section = sections.nth(index)
+            if section_text.lower() in section.inner_text().lower():
+                matching_sections.append(section)
+
+        return matching_sections
+
     def _scrape_profile(self, page: Page, profile_url: str) -> Member:
-        page.goto(profile_url, wait_until="networkidle")
+        page.goto(profile_url, wait_until="domcontentloaded")
         rank = _text_or_empty(page, self._config.rank_selector)
-        name = _text_or_empty(page, self._config.name_selector)
+        name = clean_status_text(
+            _text_or_empty(page, self._config.name_selector),
+            self._config.active_duty_text,
+        )
         unit = _text_or_empty(page, self._config.unit_selector)
         tis = _text_or_none(page, self._config.tis_selector)
 
@@ -92,9 +99,11 @@ class UnitRosterScraper:
         )
 
     def _open_award_record_tab(self, page: Page) -> None:
+        if not self._config.open_award_tab:
+            return
+
         try:
             page.locator(self._config.award_tab_selector).click(timeout=5_000)
-            page.wait_for_load_state("networkidle")
         except PlaywrightTimeoutError:
             return
 

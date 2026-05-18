@@ -13,6 +13,8 @@ class ScraperConfig:
     should pass selectors that match their roster and profile pages.
     """
 
+    roster_section_selector: str = "li.card"
+    roster_section_text: str | None = None
     roster_row_selector: str = "tr"
     profile_link_selector: str = "a[href]"
     active_duty_text: str = "active duty"
@@ -25,4 +27,5 @@ class ScraperConfig:
     award_name_selector: str = ".award-name"
     award_date_selector: str = ".award-date"
     include_non_active_duty: bool = False
+    open_award_tab: bool = True
     headless: bool = True

@@ -35,6 +35,7 @@ unit-awards-tracker gcm \
   --roster-url "https://example.test/roster" \
   --ceremony-date 2026-05-18 \
   --output report.csv \
+  --roster-section-text "Alpha Company, First Platoon, First Squad" \
   --roster-row-selector ".roster-row" \
   --profile-link-selector "a.profile-link" \
   --rank-selector "[data-field='rank']" \
@@ -44,8 +45,43 @@ unit-awards-tracker gcm \
   --award-tab-selector "text=Award Record" \
   --award-row-selector ".award-row" \
   --award-name-selector ".award-name" \
-  --award-date-selector ".award-date"
+  --award-date-selector ".award-date" \
+  --no-open-award-tab
 ```
+
+Use `--roster-section-text` to limit a run to one squad or roster section.
+The scraper searches for that text inside containers matched by
+`--roster-section-selector`, which defaults to `li.card`.
+
+Use `--no-open-award-tab` when the Award Record table is already present in
+the static profile HTML.
+
+## GUI
+
+Run the Windows-friendly desktop interface with:
+
+```bash
+unit-awards-tracker-gui
+```
+
+The GUI uses a raw-HTML scraper and the same eligibility logic as the CLI. It
+does not require browser automation when the roster and profile data are present
+in the returned HTML, and it saves local settings under the user's
+application-data directory.
+
+## Windows Release
+
+The release workflow builds a standalone `GCMReport.exe` on GitHub's Windows
+runner and attaches it to tagged releases.
+
+To cut a release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow also supports manual runs from GitHub Actions for test builds.
 
 ## Eligibility Rules
 

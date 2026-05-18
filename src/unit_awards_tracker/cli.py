@@ -44,6 +44,25 @@ def gcm(
         bool,
         typer.Option(help="Run Playwright in headless mode."),
     ] = True,
+    open_award_tab: Annotated[
+        bool,
+        typer.Option(
+            help="Click/open the Award Record tab before reading award rows.",
+        ),
+    ] = True,
+    roster_section_text: Annotated[
+        str | None,
+        typer.Option(
+            help=(
+                "Optional roster section/squad text to filter before collecting "
+                "profile links."
+            ),
+        ),
+    ] = None,
+    roster_section_selector: Annotated[
+        str,
+        typer.Option(help="CSS selector for roster section containers."),
+    ] = "li.card",
     roster_row_selector: Annotated[
         str,
         typer.Option(help="CSS selector for roster rows."),
@@ -97,6 +116,8 @@ def gcm(
         raise typer.BadParameter("ceremony-date must use YYYY-MM-DD format") from exc
 
     config = ScraperConfig(
+        roster_section_selector=roster_section_selector,
+        roster_section_text=roster_section_text,
         roster_row_selector=roster_row_selector,
         profile_link_selector=profile_link_selector,
         active_duty_text=active_duty_text,
@@ -109,6 +130,7 @@ def gcm(
         award_name_selector=award_name_selector,
         award_date_selector=award_date_selector,
         include_non_active_duty=include_non_active_duty,
+        open_award_tab=open_award_tab,
         headless=headless,
     )
     members = UnitRosterScraper(config).scrape(roster_url)

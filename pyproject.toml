@@ -1,6 +1,6 @@
 [project]
 name = "unit-awards-tracker"
-version = "0.1.0"
+version = "0.2.0"
 description = "CLI tool for tracking Good Conduct Medal eligibility from unit roster data."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -16,9 +16,13 @@ dev = [
     "pytest>=8.0.0",
     "ruff>=0.5.0",
 ]
+build = [
+    "pyinstaller>=6.0.0",
+]
 
 [project.scripts]
 unit-awards-tracker = "unit_awards_tracker.cli:app"
+unit-awards-tracker-gui = "unit_awards_tracker.gui:main"
 
 [build-system]
 requires = ["hatchling"]
