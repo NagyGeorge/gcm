@@ -1,0 +1,36 @@
+[project]
+name = "unit-awards-tracker"
+version = "0.1.0"
+description = "CLI tool for tracking Good Conduct Medal eligibility from unit roster data."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "beautifulsoup4>=4.12.0",
+    "playwright>=1.44.0",
+    "python-dateutil>=2.9.0",
+    "typer>=0.12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.5.0",
+]
+
+[project.scripts]
+unit-awards-tracker = "unit_awards_tracker.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
