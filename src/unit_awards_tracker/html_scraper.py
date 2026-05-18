@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
@@ -14,6 +15,9 @@ from unit_awards_tracker.models import AwardRecord, Member
 from unit_awards_tracker.text_utils import clean_status_text, parse_award_date
 
 HtmlFetcher = Callable[[str], str]
+_HAS_TEXT_PATTERN = re.compile(
+    r""":has-text\((?P<quote>["'])(?P<text>.*?)(?P=quote)\)"""
+)
 
 
 class HtmlUnitRosterScraper:
@@ -43,7 +47,7 @@ class HtmlUnitRosterScraper:
         profile_urls: list[str] = []
 
         for container in self._profile_link_containers(roster_soup):
-            rows = container.select(self._config.roster_row_selector)
+            rows = _select(container, self._config.roster_row_selector)
             for row in rows:
                 row_text = _element_text(row)
                 if (
@@ -52,7 +56,7 @@ class HtmlUnitRosterScraper:
                 ):
                     continue
 
-                link = row.select_one(self._config.profile_link_selector)
+                link = _select_one(row, self._config.profile_link_selector)
                 if link is None:
                     continue
                 href = link.get("href")
@@ -68,7 +72,7 @@ class HtmlUnitRosterScraper:
 
         return [
             section
-            for section in roster_soup.select(self._config.roster_section_selector)
+            for section in _select(roster_soup, self._config.roster_section_selector)
             if section_text.lower() in _element_text(section).lower()
         ]
 
@@ -96,7 +100,7 @@ class HtmlUnitRosterScraper:
 
     def _extract_gcm_awards(self, profile_soup: BeautifulSoup) -> list[AwardRecord]:
         awards: list[AwardRecord] = []
-        rows = profile_soup.select(self._config.award_row_selector)
+        rows = _select(profile_soup, self._config.award_row_selector)
 
         for row in rows:
             row_text = _element_text(row)
@@ -127,7 +131,7 @@ class HtmlUnitRosterScraper:
 def fetch_html(url: str) -> str:
     """Fetch a URL and return its HTML body."""
 
-    request = Request(url, headers={"User-Agent": "unit-awards-tracker/0.2"})
+    request = Request(url, headers={"User-Agent": "unit-awards-tracker/0.2.1"})
     with urlopen(request, timeout=30) as response:
         charset = response.headers.get_content_charset() or "utf-8"
         return response.read().decode(charset, errors="replace")
@@ -138,7 +142,7 @@ def _selected_text_or_empty(parent: BeautifulSoup | Tag, selector: str) -> str:
 
 
 def _selected_text_or_none(parent: BeautifulSoup | Tag, selector: str) -> str | None:
-    element = parent.select_one(selector)
+    element = _select_one(parent, selector)
     if element is None:
         return None
     value = _element_text(element)
@@ -150,7 +154,7 @@ def _selected_text_or_default(
     selector: str,
     default: str | None,
 ) -> str | None:
-    element = parent.select_one(selector)
+    element = _select_one(parent, selector)
     if element is None:
         return default
     value = _element_text(element)
@@ -159,3 +163,33 @@ def _selected_text_or_default(
 
 def _element_text(element: BeautifulSoup | Tag) -> str:
     return element.get_text(" ", strip=True)
+
+
+def _select(parent: BeautifulSoup | Tag, selector: str) -> list[Tag]:
+    has_text_match = _HAS_TEXT_PATTERN.search(selector)
+    if has_text_match is None:
+        return parent.select(selector)
+
+    text = has_text_match.group("text").lower()
+    base_selector = selector[: has_text_match.start()].strip()
+    descendant_selector = selector[has_text_match.end() :].strip()
+    if not base_selector:
+        base_selector = "*"
+
+    matching_elements = [
+        element
+        for element in parent.select(base_selector)
+        if text in _element_text(element).lower()
+    ]
+    if not descendant_selector:
+        return matching_elements
+
+    descendants: list[Tag] = []
+    for element in matching_elements:
+        descendants.extend(element.select(descendant_selector))
+    return descendants
+
+
+def _select_one(parent: BeautifulSoup | Tag, selector: str) -> Tag | None:
+    elements = _select(parent, selector)
+    return elements[0] if elements else None

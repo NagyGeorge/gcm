@@ -11,6 +11,27 @@ def test_load_gui_settings_uses_defaults_for_missing_file(tmp_path) -> None:
     assert settings == GuiSettings()
 
 
+def test_gui_settings_defaults_match_unit_report() -> None:
+    settings = GuiSettings()
+
+    assert settings.roster_url == "https://3rdinf.us/milhq/roster"
+    assert settings.ceremony_date == "2026-06-07"
+    assert settings.output_path == "squad_report.csv"
+    assert settings.open_award_tab is False
+    assert settings.roster_section_text == "Alpha Company, First Platoon Headquarters"
+    assert settings.roster_section_selector == "li.card.mb-4"
+    assert settings.roster_row_selector == "ul.card-body > li.text-small"
+    assert settings.profile_link_selector == "a.btn-link.w-100[href^='/milhq/soldier/']"
+    assert settings.active_duty_text == "Active Duty"
+    assert settings.rank_selector == ".card.hide-phone .text-small.text-center p"
+    assert settings.name_selector == "h1.mb-0"
+    assert settings.unit_selector == "#unit"
+    assert settings.tis_selector == "div.card:has-text('Length in service') p.mb-2"
+    assert settings.award_row_selector == "#award-record tbody tr"
+    assert settings.award_name_selector == "td:nth-child(2)"
+    assert settings.award_date_selector == "td:nth-child(1)"
+
+
 def test_load_gui_settings_preserves_defaults_for_unknown_keys(tmp_path) -> None:
     settings_path = tmp_path / "settings.json"
     settings_path.write_text(
