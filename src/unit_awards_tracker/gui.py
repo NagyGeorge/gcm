@@ -136,6 +136,11 @@ class GcmGui(tk.Tk):
         ).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(
             controls,
+            text="Reset to Unit Defaults",
+            command=self._reset_to_defaults,
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(
+            controls,
             text="Export Current Results",
             command=self._export_current_results,
         ).pack(side=tk.LEFT, padx=(8, 0))
@@ -442,6 +447,16 @@ class GcmGui(tk.Tk):
             else:
                 values[key] = bool(value)
         return GuiSettings(**values)
+
+    def _apply_settings(self, settings: GuiSettings) -> None:
+        for key, value in asdict(settings).items():
+            variable = self._variables[key]
+            variable.set(value)
+
+    def _reset_to_defaults(self) -> None:
+        self._apply_settings(GuiSettings())
+        self._save_settings(show_message=False)
+        self._append_log("Reset settings to unit defaults.")
 
     def _save_settings(self, show_message: bool = True) -> None:
         settings = self._settings_from_form()

@@ -131,7 +131,7 @@ class HtmlUnitRosterScraper:
 def fetch_html(url: str) -> str:
     """Fetch a URL and return its HTML body."""
 
-    request = Request(url, headers={"User-Agent": "unit-awards-tracker/0.2.1"})
+    request = Request(url, headers={"User-Agent": "unit-awards-tracker/0.2.2"})
     with urlopen(request, timeout=30) as response:
         charset = response.headers.get_content_charset() or "utf-8"
         return response.read().decode(charset, errors="replace")
