@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from unit_awards_tracker.gui import GuiSettings, _load_settings
+from unit_awards_tracker.gui import UNIT_PRESETS, GuiSettings, _load_settings
 
 
 def test_load_gui_settings_uses_defaults_for_missing_file(tmp_path) -> None:
@@ -32,6 +32,21 @@ def test_gui_settings_defaults_match_unit_report() -> None:
     assert settings.award_date_selector == "td:nth-child(1)"
 
 
+def test_unit_presets_include_supported_roster_sections() -> None:
+    assert UNIT_PRESETS == (
+        "First Battalion Headquarters",
+        "Alpha Company Headquarters",
+        "Alpha Company, First Platoon Headquarters",
+        "Alpha Company, First Platoon, First Squad",
+        "Alpha Company, First Platoon, Second Squad",
+        "Alpha Company, First Platoon, Third Squad",
+        "Alpha Company, First Platoon, Fourth Squad",
+        "Alpha Company, Second Platoon Headquarters",
+        "Alpha Company, Second Platoon, First Squad",
+        "Alpha Company, Second Platoon, Second Squad",
+    )
+
+
 def test_load_gui_settings_preserves_defaults_for_unknown_keys(tmp_path) -> None:
     settings_path = tmp_path / "settings.json"
     settings_path.write_text(
@@ -50,3 +65,15 @@ def test_load_gui_settings_preserves_defaults_for_unknown_keys(tmp_path) -> None
     assert settings.roster_url == "https://example.test/roster"
     assert settings.open_award_tab is True
     assert settings.output_path == GuiSettings().output_path
+
+
+def test_load_gui_settings_falls_back_from_custom_section_text(tmp_path) -> None:
+    settings_path = tmp_path / "settings.json"
+    settings_path.write_text(
+        json.dumps({"roster_section_text": "Custom dev section"}),
+        encoding="utf-8",
+    )
+
+    settings = _load_settings(settings_path)
+
+    assert settings.roster_section_text == GuiSettings().roster_section_text

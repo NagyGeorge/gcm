@@ -21,6 +21,18 @@ from unit_awards_tracker.report import write_csv_report
 
 APP_NAME = "UnitAwardsTracker"
 DATE_FORMAT = "%Y-%m-%d"
+UNIT_PRESETS = (
+    "First Battalion Headquarters",
+    "Alpha Company Headquarters",
+    "Alpha Company, First Platoon Headquarters",
+    "Alpha Company, First Platoon, First Squad",
+    "Alpha Company, First Platoon, Second Squad",
+    "Alpha Company, First Platoon, Third Squad",
+    "Alpha Company, First Platoon, Fourth Squad",
+    "Alpha Company, Second Platoon Headquarters",
+    "Alpha Company, Second Platoon, First Squad",
+    "Alpha Company, Second Platoon, Second Squad",
+)
 
 
 @dataclass(frozen=True)
@@ -72,7 +84,9 @@ class GcmGui(tk.Tk):
                 value=settings.ceremony_date or date.today().isoformat()
             ),
             "output_path": tk.StringVar(value=settings.output_path),
-            "roster_section_text": tk.StringVar(value=settings.roster_section_text),
+            "roster_section_text": tk.StringVar(
+                value=_preset_or_default(settings.roster_section_text)
+            ),
             "roster_section_selector": tk.StringVar(
                 value=settings.roster_section_selector
             ),
@@ -105,7 +119,7 @@ class GcmGui(tk.Tk):
 
         self._add_entry(form, "Roster URL", "roster_url", 0, 0, columnspan=3)
         self._add_entry(form, "Ceremony Date", "ceremony_date", 1, 0)
-        self._add_entry(form, "Squad/Section", "roster_section_text", 1, 2)
+        self._add_preset_combobox(form, 1, 2)
         self._add_output_entry(form, 2)
 
         options = ttk.Frame(form)
@@ -147,35 +161,8 @@ class GcmGui(tk.Tk):
         self._summary = ttk.Label(controls, text="No report run yet.")
         self._summary.pack(side=tk.LEFT, padx=(16, 0))
 
-        advanced = ttk.LabelFrame(self, text="Selectors", padding=12)
-        advanced.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 8))
-        for column in range(4):
-            advanced.columnconfigure(column, weight=1)
-
-        selector_fields = [
-            ("Section", "roster_section_selector"),
-            ("Roster Row", "roster_row_selector"),
-            ("Profile Link", "profile_link_selector"),
-            ("Active Duty Text", "active_duty_text"),
-            ("Rank", "rank_selector"),
-            ("Name", "name_selector"),
-            ("Unit", "unit_selector"),
-            ("Time In Service", "tis_selector"),
-            ("Award Row", "award_row_selector"),
-            ("Award Name", "award_name_selector"),
-            ("Award Date", "award_date_selector"),
-        ]
-        for index, (label, key) in enumerate(selector_fields):
-            self._add_entry(
-                advanced,
-                label,
-                key,
-                index // 2,
-                (index % 2) * 2,
-            )
-
         body = ttk.PanedWindow(self, orient=tk.VERTICAL)
-        body.grid(row=2, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        body.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
 
         table_frame = ttk.Frame(body)
         table_frame.columnconfigure(0, weight=1)
@@ -261,6 +248,26 @@ class GcmGui(tk.Tk):
             row=row,
             column=column + 1,
             columnspan=columnspan,
+            sticky="ew",
+            pady=4,
+        )
+
+    def _add_preset_combobox(self, parent: ttk.Frame, row: int, column: int) -> None:
+        ttk.Label(parent, text="Unit Preset").grid(
+            row=row,
+            column=column,
+            sticky="w",
+            padx=(0, 6),
+            pady=4,
+        )
+        ttk.Combobox(
+            parent,
+            textvariable=self._variables["roster_section_text"],
+            values=UNIT_PRESETS,
+            state="readonly",
+        ).grid(
+            row=row,
+            column=column + 1,
             sticky="ew",
             pady=4,
         )
@@ -493,6 +500,12 @@ def _settings_path() -> Path:
     return Path.home() / ".unit_awards_tracker" / "settings.json"
 
 
+def _preset_or_default(value: str) -> str:
+    if value in UNIT_PRESETS:
+        return value
+    return GuiSettings().roster_section_text
+
+
 def _load_settings(path: Path) -> GuiSettings:
     if not path.exists():
         return GuiSettings()
@@ -509,6 +522,9 @@ def _load_settings(path: Path) -> GuiSettings:
             for key, value in raw_settings.items()
             if key in defaults and value is not None
         }
+    )
+    defaults["roster_section_text"] = _preset_or_default(
+        str(defaults["roster_section_text"])
     )
     return GuiSettings(**defaults)
 
