@@ -10,8 +10,7 @@ from urllib.request import Request, urlopen
 from bs4 import BeautifulSoup, Tag
 
 from unit_awards_tracker.config import ScraperConfig
-from unit_awards_tracker.eligibility import GCM_NAME
-from unit_awards_tracker.models import AwardRecord, Member
+from unit_awards_tracker.models import AwardRecord, CombatRecord, Member
 from unit_awards_tracker.text_utils import clean_status_text, parse_award_date
 
 HtmlFetcher = Callable[[str], str]
@@ -97,8 +96,14 @@ class HtmlUnitRosterScraper:
             self._config.active_duty_text,
         )
         unit = _selected_text_or_empty(profile_soup, self._config.unit_selector)
+        specialty = _selected_text_or_none(
+            profile_soup,
+            self._config.specialty_selector,
+        )
+        position = _selected_text_or_none(profile_soup, self._config.position_selector)
         tis = _selected_text_or_none(profile_soup, self._config.tis_selector)
-        awards = tuple(self._extract_gcm_awards(profile_soup))
+        awards = tuple(self._extract_awards(profile_soup))
+        combat_records = tuple(self._extract_combat_records(profile_soup))
 
         return Member(
             rank=rank,
@@ -106,24 +111,25 @@ class HtmlUnitRosterScraper:
             unit=unit,
             profile_url=profile_url,
             time_in_service_text=tis,
+            specialty=specialty,
+            position=position,
             active_duty=True,
             awards=awards,
+            combat_records=combat_records,
         )
 
-    def _extract_gcm_awards(self, profile_soup: BeautifulSoup) -> list[AwardRecord]:
+    def _extract_awards(self, profile_soup: BeautifulSoup) -> list[AwardRecord]:
         awards: list[AwardRecord] = []
         rows = _select(profile_soup, self._config.award_row_selector)
 
         for row in rows:
-            row_text = _element_text(row)
-            if GCM_NAME.lower() not in row_text.lower():
-                continue
-
             award_name = _selected_text_or_default(
                 row,
                 self._config.award_name_selector,
-                GCM_NAME,
+                None,
             )
+            if award_name is None:
+                continue
             raw_date = _selected_text_or_default(
                 row,
                 self._config.award_date_selector,
@@ -137,7 +143,44 @@ class HtmlUnitRosterScraper:
                 )
             )
 
+        seen_award_names = {award.name.lower() for award in awards}
+        for title in _award_titles(profile_soup):
+            if title.lower() in seen_award_names:
+                continue
+            awards.append(AwardRecord(name=title, awarded_date=None, raw_date=None))
+            seen_award_names.add(title.lower())
+
         return awards
+
+    def _extract_combat_records(
+        self,
+        profile_soup: BeautifulSoup,
+    ) -> list[CombatRecord]:
+        records: list[CombatRecord] = []
+        rows = _select(profile_soup, self._config.combat_row_selector)
+
+        for row in rows:
+            text = _selected_text_or_default(
+                row,
+                self._config.combat_text_selector,
+                None,
+            )
+            if text is None:
+                continue
+            raw_date = _selected_text_or_default(
+                row,
+                self._config.combat_date_selector,
+                None,
+            )
+            records.append(
+                CombatRecord(
+                    text=text,
+                    record_date=parse_award_date(raw_date),
+                    raw_date=raw_date,
+                )
+            )
+
+        return records
 
 
 def fetch_html(url: str) -> str:
@@ -205,3 +248,15 @@ def _select(parent: BeautifulSoup | Tag, selector: str) -> list[Tag]:
 def _select_one(parent: BeautifulSoup | Tag, selector: str) -> Tag | None:
     elements = _select(parent, selector)
     return elements[0] if elements else None
+
+
+def _award_titles(parent: BeautifulSoup | Tag) -> list[str]:
+    titles: list[str] = []
+    for element in parent.select("[title]"):
+        title = element.get("title")
+        if not isinstance(title, str):
+            continue
+        title = " ".join(title.split())
+        if title:
+            titles.append(title)
+    return titles

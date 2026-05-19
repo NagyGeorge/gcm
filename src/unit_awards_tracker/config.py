@@ -21,11 +21,16 @@ class ScraperConfig:
     rank_selector: str = ".rank"
     name_selector: str = ".name"
     unit_selector: str = ".unit"
+    specialty_selector: str = ".specialty"
+    position_selector: str = ".position"
     tis_selector: str = ".time-in-service"
     award_tab_selector: str = "text=Award Record"
     award_row_selector: str = "tr"
     award_name_selector: str = ".award-name"
     award_date_selector: str = ".award-date"
+    combat_row_selector: str = "#combat-record tbody tr"
+    combat_date_selector: str = "td:nth-child(1)"
+    combat_text_selector: str = "td:nth-child(2)"
     include_non_active_duty: bool = False
     open_award_tab: bool = True
     headless: bool = True

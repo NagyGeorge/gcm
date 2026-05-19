@@ -43,10 +43,15 @@ def test_gui_settings_defaults_match_unit_report() -> None:
     assert settings.rank_selector == ".card.hide-phone .text-small.text-center p"
     assert settings.name_selector == "h1.mb-0"
     assert settings.unit_selector == "#unit"
+    assert settings.specialty_selector == "#specialty"
+    assert settings.position_selector == "#position"
     assert settings.tis_selector == "div.card:has-text('Length in service') p.mb-2"
     assert settings.award_row_selector == "#award-record tbody tr"
     assert settings.award_name_selector == "td:nth-child(2)"
     assert settings.award_date_selector == "td:nth-child(1)"
+    assert settings.combat_row_selector == "#combat-record tbody tr"
+    assert settings.combat_date_selector == "td:nth-child(1)"
+    assert settings.combat_text_selector == "td:nth-child(2)"
 
 
 def test_ceremony_date_uses_second_sunday_when_first_sunday_is_early() -> None:

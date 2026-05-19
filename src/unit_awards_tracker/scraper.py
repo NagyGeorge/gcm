@@ -13,8 +13,7 @@ from playwright.sync_api import (
 )
 
 from unit_awards_tracker.config import ScraperConfig
-from unit_awards_tracker.eligibility import GCM_NAME
-from unit_awards_tracker.models import AwardRecord, Member
+from unit_awards_tracker.models import AwardRecord, CombatRecord, Member
 from unit_awards_tracker.text_utils import clean_status_text, parse_award_date
 
 
@@ -83,10 +82,13 @@ class UnitRosterScraper:
             self._config.active_duty_text,
         )
         unit = _text_or_empty(page, self._config.unit_selector)
+        specialty = _text_or_none(page, self._config.specialty_selector)
+        position = _text_or_none(page, self._config.position_selector)
         tis = _text_or_none(page, self._config.tis_selector)
 
         self._open_award_record_tab(page)
-        awards = tuple(self._extract_gcm_awards(page))
+        awards = tuple(self._extract_awards(page))
+        combat_records = tuple(self._extract_combat_records(page))
 
         return Member(
             rank=rank,
@@ -94,8 +96,11 @@ class UnitRosterScraper:
             unit=unit,
             profile_url=profile_url,
             time_in_service_text=tis,
+            specialty=specialty,
+            position=position,
             active_duty=True,
             awards=awards,
+            combat_records=combat_records,
         )
 
     def _open_award_record_tab(self, page: Page) -> None:
@@ -107,21 +112,19 @@ class UnitRosterScraper:
         except PlaywrightTimeoutError:
             return
 
-    def _extract_gcm_awards(self, page: Page) -> list[AwardRecord]:
+    def _extract_awards(self, page: Page) -> list[AwardRecord]:
         awards: list[AwardRecord] = []
         rows = page.locator(self._config.award_row_selector)
 
         for index in range(rows.count()):
             row = rows.nth(index)
-            row_text = row.inner_text().strip()
-            if GCM_NAME.lower() not in row_text.lower():
-                continue
-
             award_name = _locator_text_or_default(
                 row,
                 self._config.award_name_selector,
-                GCM_NAME,
+                None,
             )
+            if award_name is None:
+                continue
             raw_date = _locator_text_or_default(
                 row,
                 self._config.award_date_selector,
@@ -135,7 +138,47 @@ class UnitRosterScraper:
                 )
             )
 
+        seen_award_names = {award.name.lower() for award in awards}
+        titles = page.locator("[title]")
+        for index in range(titles.count()):
+            title = titles.nth(index).get_attribute("title")
+            if not title:
+                continue
+            title = " ".join(title.split())
+            if not title or title.lower() in seen_award_names:
+                continue
+            awards.append(AwardRecord(name=title, awarded_date=None, raw_date=None))
+            seen_award_names.add(title.lower())
+
         return awards
+
+    def _extract_combat_records(self, page: Page) -> list[CombatRecord]:
+        records: list[CombatRecord] = []
+        rows = page.locator(self._config.combat_row_selector)
+
+        for index in range(rows.count()):
+            row = rows.nth(index)
+            text = _locator_text_or_default(
+                row,
+                self._config.combat_text_selector,
+                None,
+            )
+            if text is None:
+                continue
+            raw_date = _locator_text_or_default(
+                row,
+                self._config.combat_date_selector,
+                None,
+            )
+            records.append(
+                CombatRecord(
+                    text=text,
+                    record_date=parse_award_date(raw_date),
+                    raw_date=raw_date,
+                )
+            )
+
+        return records
 
 
 def _text_or_empty(page: Page, selector: str) -> str:

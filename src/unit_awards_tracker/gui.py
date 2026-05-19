@@ -17,11 +17,21 @@ from tkinter import filedialog, messagebox, ttk
 from urllib.request import Request, urlopen
 
 from unit_awards_tracker import __version__
+from unit_awards_tracker.combat_awards import calculate_combat_award_eligibility
 from unit_awards_tracker.config import ScraperConfig
 from unit_awards_tracker.eligibility import calculate_gcm_eligibility
 from unit_awards_tracker.html_scraper import HtmlUnitRosterScraper
-from unit_awards_tracker.models import EligibilityResult
-from unit_awards_tracker.report import write_csv_report
+from unit_awards_tracker.models import (
+    CombatAwardEligibilityResult,
+    EligibilityResult,
+    TisAwardEligibilityResult,
+)
+from unit_awards_tracker.report import (
+    write_combat_awards_csv_report,
+    write_csv_report,
+    write_tis_awards_csv_report,
+)
+from unit_awards_tracker.tis_awards import calculate_tis_award_eligibility
 
 APP_NAME = "UnitAwardsTracker"
 DATE_FORMAT = "%Y-%m-%d"
@@ -86,10 +96,15 @@ class GuiSettings:
     rank_selector: str = ".card.hide-phone .text-small.text-center p"
     name_selector: str = "h1.mb-0"
     unit_selector: str = "#unit"
+    specialty_selector: str = "#specialty"
+    position_selector: str = "#position"
     tis_selector: str = "div.card:has-text('Length in service') p.mb-2"
     award_row_selector: str = "#award-record tbody tr"
     award_name_selector: str = "td:nth-child(2)"
     award_date_selector: str = "td:nth-child(1)"
+    combat_row_selector: str = "#combat-record tbody tr"
+    combat_date_selector: str = "td:nth-child(1)"
+    combat_text_selector: str = "td:nth-child(2)"
     include_non_active_duty: bool = False
     open_award_tab: bool = False
 
@@ -119,6 +134,8 @@ class GcmGui(tk.Tk):
         self._settings = _load_settings(self._settings_path)
         self._worker_messages: queue.Queue[tuple[str, object]] = queue.Queue()
         self._results: list[EligibilityResult] = []
+        self._tis_results: list[TisAwardEligibilityResult] = []
+        self._combat_results: list[CombatAwardEligibilityResult] = []
         self._running = False
         self._checking_updates = False
 
@@ -147,10 +164,15 @@ class GcmGui(tk.Tk):
             "rank_selector": tk.StringVar(value=settings.rank_selector),
             "name_selector": tk.StringVar(value=settings.name_selector),
             "unit_selector": tk.StringVar(value=settings.unit_selector),
+            "specialty_selector": tk.StringVar(value=settings.specialty_selector),
+            "position_selector": tk.StringVar(value=settings.position_selector),
             "tis_selector": tk.StringVar(value=settings.tis_selector),
             "award_row_selector": tk.StringVar(value=settings.award_row_selector),
             "award_name_selector": tk.StringVar(value=settings.award_name_selector),
             "award_date_selector": tk.StringVar(value=settings.award_date_selector),
+            "combat_row_selector": tk.StringVar(value=settings.combat_row_selector),
+            "combat_date_selector": tk.StringVar(value=settings.combat_date_selector),
+            "combat_text_selector": tk.StringVar(value=settings.combat_text_selector),
             "include_non_active_duty": tk.BooleanVar(
                 value=settings.include_non_active_duty
             ),
@@ -160,7 +182,7 @@ class GcmGui(tk.Tk):
 
     def _build_ui(self) -> None:
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(2, weight=1)
+        self.rowconfigure(1, weight=1)
 
         form = ttk.Frame(self, padding=12)
         form.grid(row=0, column=0, sticky="ew")
@@ -188,7 +210,7 @@ class GcmGui(tk.Tk):
             options,
             text="Show due only",
             variable=self._variables["show_due_only"],
-            command=self._refresh_results_table,
+            command=self._refresh_result_tables,
         ).pack(side=tk.LEFT, padx=(18, 0))
 
         controls = ttk.Frame(form)
@@ -211,8 +233,18 @@ class GcmGui(tk.Tk):
         ).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(
             controls,
-            text="Export Current Results",
+            text="Export GCM Results",
             command=self._export_current_results,
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(
+            controls,
+            text="Export TIS Results",
+            command=self._export_tis_results,
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(
+            controls,
+            text="Export Combat Results",
+            command=self._export_combat_results,
         ).pack(side=tk.LEFT, padx=(8, 0))
         self._update_button = ttk.Button(
             controls,
@@ -223,8 +255,16 @@ class GcmGui(tk.Tk):
         self._summary = ttk.Label(controls, text="No report run yet.")
         self._summary.pack(side=tk.LEFT, padx=(16, 0))
 
-        body = ttk.PanedWindow(self, orient=tk.VERTICAL)
-        body.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        notebook = ttk.Notebook(self)
+        notebook.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+
+        gcm_tab = ttk.Frame(notebook)
+        gcm_tab.columnconfigure(0, weight=1)
+        gcm_tab.rowconfigure(0, weight=1)
+        notebook.add(gcm_tab, text="GCM")
+
+        body = ttk.PanedWindow(gcm_tab, orient=tk.VERTICAL)
+        body.grid(row=0, column=0, sticky="nsew")
 
         table_frame = ttk.Frame(body)
         table_frame.columnconfigure(0, weight=1)
@@ -289,6 +329,127 @@ class GcmGui(tk.Tk):
         self._log.configure(yscrollcommand=log_scroll.set)
         self._log.grid(row=0, column=0, sticky="nsew")
         log_scroll.grid(row=0, column=1, sticky="ns")
+
+        tis_tab = ttk.Frame(notebook)
+        tis_tab.columnconfigure(0, weight=1)
+        tis_tab.rowconfigure(0, weight=1)
+        notebook.add(tis_tab, text="TIS Awards")
+        self._build_tis_table(tis_tab)
+
+        combat_tab = ttk.Frame(notebook)
+        combat_tab.columnconfigure(0, weight=1)
+        combat_tab.rowconfigure(0, weight=1)
+        notebook.add(combat_tab, text="Combat Awards")
+        self._build_combat_table(combat_tab)
+
+    def _build_tis_table(self, parent: ttk.Frame) -> None:
+        columns = (
+            "eligible",
+            "award",
+            "rank",
+            "name",
+            "unit",
+            "time_in_service",
+            "last_award",
+            "next_eligible",
+            "reason",
+        )
+        self._tis_table = ttk.Treeview(
+            parent,
+            columns=columns,
+            show="headings",
+            height=18,
+        )
+        headings = {
+            "eligible": "Due",
+            "award": "Award",
+            "rank": "Rank",
+            "name": "Name",
+            "unit": "Unit",
+            "time_in_service": "Time In Service",
+            "last_award": "Last Award",
+            "next_eligible": "Milestone",
+            "reason": "Reason",
+        }
+        widths = {
+            "eligible": 60,
+            "award": 90,
+            "rank": 130,
+            "name": 180,
+            "unit": 230,
+            "time_in_service": 130,
+            "last_award": 100,
+            "next_eligible": 110,
+            "reason": 360,
+        }
+        for column in columns:
+            self._tis_table.heading(column, text=headings[column])
+            self._tis_table.column(column, width=widths[column], minwidth=50)
+
+        table_scroll = ttk.Scrollbar(
+            parent,
+            orient=tk.VERTICAL,
+            command=self._tis_table.yview,
+        )
+        self._tis_table.configure(yscrollcommand=table_scroll.set)
+        self._tis_table.grid(row=0, column=0, sticky="nsew")
+        table_scroll.grid(row=0, column=1, sticky="ns")
+
+    def _build_combat_table(self, parent: ttk.Frame) -> None:
+        columns = (
+            "eligible",
+            "award",
+            "next_award",
+            "rank",
+            "name",
+            "unit",
+            "specialty",
+            "position",
+            "operation_count",
+            "reason",
+        )
+        self._combat_table = ttk.Treeview(
+            parent,
+            columns=columns,
+            show="headings",
+            height=18,
+        )
+        headings = {
+            "eligible": "Due",
+            "award": "Award",
+            "next_award": "Next",
+            "rank": "Rank",
+            "name": "Name",
+            "unit": "Unit",
+            "specialty": "Specialty",
+            "position": "Position",
+            "operation_count": "CY Ops",
+            "reason": "Reason",
+        }
+        widths = {
+            "eligible": 60,
+            "award": 90,
+            "next_award": 70,
+            "rank": 120,
+            "name": 180,
+            "unit": 220,
+            "specialty": 90,
+            "position": 180,
+            "operation_count": 80,
+            "reason": 360,
+        }
+        for column in columns:
+            self._combat_table.heading(column, text=headings[column])
+            self._combat_table.column(column, width=widths[column], minwidth=50)
+
+        table_scroll = ttk.Scrollbar(
+            parent,
+            orient=tk.VERTICAL,
+            command=self._combat_table.yview,
+        )
+        self._combat_table.configure(yscrollcommand=table_scroll.set)
+        self._combat_table.grid(row=0, column=0, sticky="nsew")
+        table_scroll.grid(row=0, column=1, sticky="ns")
 
     def _add_entry(
         self,
@@ -416,10 +577,15 @@ class GcmGui(tk.Tk):
                 rank_selector=settings.rank_selector,
                 name_selector=settings.name_selector,
                 unit_selector=settings.unit_selector,
+                specialty_selector=settings.specialty_selector,
+                position_selector=settings.position_selector,
                 tis_selector=settings.tis_selector,
                 award_row_selector=settings.award_row_selector,
                 award_name_selector=settings.award_name_selector,
                 award_date_selector=settings.award_date_selector,
+                combat_row_selector=settings.combat_row_selector,
+                combat_date_selector=settings.combat_date_selector,
+                combat_text_selector=settings.combat_text_selector,
                 include_non_active_duty=settings.include_non_active_duty,
                 open_award_tab=settings.open_award_tab,
                 headless=True,
@@ -434,8 +600,40 @@ class GcmGui(tk.Tk):
             results = [
                 calculate_gcm_eligibility(member, ceremony_date) for member in members
             ]
+            tis_results = [
+                tis_result
+                for member in members
+                for tis_result in calculate_tis_award_eligibility(
+                    member,
+                    ceremony_date,
+                )
+            ]
+            combat_results = [
+                combat_result
+                for member in members
+                for combat_result in calculate_combat_award_eligibility(
+                    member,
+                    ceremony_date,
+                )
+            ]
             write_csv_report(results, output_path)
-            self._worker_messages.put(("done", (results, output_path)))
+            tis_output_path = _tis_output_path(output_path)
+            write_tis_awards_csv_report(tis_results, tis_output_path)
+            combat_output_path = _combat_output_path(output_path)
+            write_combat_awards_csv_report(combat_results, combat_output_path)
+            self._worker_messages.put(
+                (
+                    "done",
+                    (
+                        results,
+                        tis_results,
+                        combat_results,
+                        output_path,
+                        tis_output_path,
+                        combat_output_path,
+                    ),
+                )
+            )
         except Exception as exc:  # noqa: BLE001
             self._worker_messages.put(("error", exc))
 
@@ -459,14 +657,36 @@ class GcmGui(tk.Tk):
             if message_type == "log":
                 self._append_log(str(payload))
             elif message_type == "done":
-                results, output_path = payload
+                (
+                    results,
+                    tis_results,
+                    combat_results,
+                    output_path,
+                    tis_output_path,
+                    combat_output_path,
+                ) = payload
                 self._results = list(results)
-                self._refresh_results_table()
+                self._tis_results = list(tis_results)
+                self._combat_results = list(combat_results)
+                self._refresh_result_tables()
                 due_count = sum(result.eligible for result in self._results)
+                tis_due_count = sum(result.eligible for result in self._tis_results)
+                combat_due_count = sum(
+                    result.eligible for result in self._combat_results
+                )
                 self._summary.configure(
-                    text=f"{due_count} due / {len(self._results)} total"
+                    text=(
+                        f"GCM {due_count} due / {len(self._results)} total; "
+                        f"TIS {tis_due_count} due / {len(self._tis_results)} rows; "
+                        f"Combat {combat_due_count} due / "
+                        f"{len(self._combat_results)} rows"
+                    )
                 )
                 self._append_log(f"Wrote report to {output_path}.")
+                self._append_log(f"Wrote TIS awards report to {tis_output_path}.")
+                self._append_log(
+                    f"Wrote combat awards report to {combat_output_path}."
+                )
                 if not self._results:
                     self._append_log("No members were found for the selected preset.")
                     messagebox.showwarning(
@@ -493,6 +713,11 @@ class GcmGui(tk.Tk):
 
         self.after(100, self._poll_worker_messages)
 
+    def _refresh_result_tables(self) -> None:
+        self._refresh_results_table()
+        self._refresh_tis_results_table()
+        self._refresh_combat_results_table()
+
     def _refresh_results_table(self) -> None:
         for item in self._table.get_children():
             self._table.delete(item)
@@ -501,6 +726,24 @@ class GcmGui(tk.Tk):
         if self._variables["show_due_only"].get():
             results = [result for result in results if result.eligible]
         self._populate_results(results)
+
+    def _refresh_tis_results_table(self) -> None:
+        for item in self._tis_table.get_children():
+            self._tis_table.delete(item)
+
+        results = self._tis_results
+        if self._variables["show_due_only"].get():
+            results = [result for result in results if result.eligible]
+        self._populate_tis_results(results)
+
+    def _refresh_combat_results_table(self) -> None:
+        for item in self._combat_table.get_children():
+            self._combat_table.delete(item)
+
+        results = self._combat_results
+        if self._variables["show_due_only"].get():
+            results = [result for result in results if result.eligible]
+        self._populate_combat_results(results)
 
     def _populate_results(self, results: list[EligibilityResult]) -> None:
         for result in sorted(results, key=result_sort_key):
@@ -522,6 +765,60 @@ class GcmGui(tk.Tk):
                 ),
             )
 
+    def _populate_tis_results(
+        self,
+        results: list[TisAwardEligibilityResult],
+    ) -> None:
+        for result in sorted(results, key=tis_result_sort_key):
+            member = result.member
+            self._tis_table.insert(
+                "",
+                tk.END,
+                values=(
+                    "Yes" if result.eligible else "No",
+                    result.award_abbreviation,
+                    member.rank,
+                    member.name,
+                    member.unit,
+                    member.time_in_service_text or "",
+                    result.last_award_date.isoformat()
+                    if result.last_award_date
+                    else "",
+                    result.next_eligible_date.isoformat()
+                    if result.next_eligible_date
+                    else "",
+                    result.reason,
+                ),
+            )
+
+    def _populate_combat_results(
+        self,
+        results: list[CombatAwardEligibilityResult],
+    ) -> None:
+        for result in sorted(results, key=combat_result_sort_key):
+            member = result.member
+            next_award = (
+                f"{result.award_abbreviation}{result.next_award_number}"
+                if result.next_award_number is not None
+                else ""
+            )
+            self._combat_table.insert(
+                "",
+                tk.END,
+                values=(
+                    "Yes" if result.eligible else "No",
+                    result.award_abbreviation,
+                    next_award,
+                    member.rank,
+                    member.name,
+                    member.unit,
+                    member.specialty or "",
+                    member.position or "",
+                    result.current_year_operation_count,
+                    result.reason,
+                ),
+            )
+
     def _export_current_results(self) -> None:
         if not self._results:
             messagebox.showinfo("No results", "Run a report before exporting.")
@@ -539,6 +836,40 @@ class GcmGui(tk.Tk):
         write_csv_report(self._results, output_path)
         self._variables["output_path"].set(str(output_path))
         self._append_log(f"Exported current results to {output_path}.")
+
+    def _export_tis_results(self) -> None:
+        if not self._tis_results:
+            messagebox.showinfo("No results", "Run a report before exporting.")
+            return
+
+        path = filedialog.asksaveasfilename(
+            title="Export current TIS awards report",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+
+        output_path = Path(path).expanduser()
+        write_tis_awards_csv_report(self._tis_results, output_path)
+        self._append_log(f"Exported current TIS results to {output_path}.")
+
+    def _export_combat_results(self) -> None:
+        if not self._combat_results:
+            messagebox.showinfo("No results", "Run a report before exporting.")
+            return
+
+        path = filedialog.asksaveasfilename(
+            title="Export current combat awards report",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+
+        output_path = Path(path).expanduser()
+        write_combat_awards_csv_report(self._combat_results, output_path)
+        self._append_log(f"Exported current combat results to {output_path}.")
 
     def _check_for_updates(self) -> None:
         if self._checking_updates:
@@ -620,8 +951,14 @@ class GcmGui(tk.Tk):
 
     def _clear_results(self) -> None:
         self._results = []
+        self._tis_results = []
+        self._combat_results = []
         for item in self._table.get_children():
             self._table.delete(item)
+        for item in self._tis_table.get_children():
+            self._tis_table.delete(item)
+        for item in self._combat_table.get_children():
+            self._combat_table.delete(item)
         self._summary.configure(text="Running...")
 
     def _append_log(self, message: str) -> None:
@@ -714,6 +1051,46 @@ def result_sort_key(result: EligibilityResult) -> tuple[bool, int, str]:
         rank_sort_value(result.member.rank),
         result.member.name.lower(),
     )
+
+
+def tis_result_sort_key(
+    result: TisAwardEligibilityResult,
+) -> tuple[bool, str, int, str]:
+    """Return the table sort key for a TIS award eligibility result."""
+
+    return (
+        not result.eligible,
+        result.award_abbreviation,
+        rank_sort_value(result.member.rank),
+        result.member.name.lower(),
+    )
+
+
+def combat_result_sort_key(
+    result: CombatAwardEligibilityResult,
+) -> tuple[bool, str, int, str]:
+    """Return the table sort key for a combat award eligibility result."""
+
+    return (
+        not result.eligible,
+        result.award_abbreviation,
+        rank_sort_value(result.member.rank),
+        result.member.name.lower(),
+    )
+
+
+def _tis_output_path(output_path: Path) -> Path:
+    """Return the sibling report path for TIS award results."""
+
+    suffix = output_path.suffix or ".csv"
+    return output_path.with_name(f"{output_path.stem}_tis_awards{suffix}")
+
+
+def _combat_output_path(output_path: Path) -> Path:
+    """Return the sibling report path for combat award results."""
+
+    suffix = output_path.suffix or ".csv"
+    return output_path.with_name(f"{output_path.stem}_combat_awards{suffix}")
 
 
 def version_parts(version: str) -> tuple[int, ...]:
