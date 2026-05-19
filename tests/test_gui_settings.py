@@ -1,18 +1,25 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 
-from unit_awards_tracker.gui import UNIT_PRESETS, GuiSettings, _load_settings
+from unit_awards_tracker.gui import (
+    UNIT_PRESETS,
+    _load_settings,
+    default_gui_settings,
+    first_ceremony_date_for_month,
+    next_ceremony_date,
+)
 
 
 def test_load_gui_settings_uses_defaults_for_missing_file(tmp_path) -> None:
     settings = _load_settings(tmp_path / "settings.json")
 
-    assert settings == GuiSettings()
+    assert settings == default_gui_settings()
 
 
 def test_gui_settings_defaults_match_unit_report() -> None:
-    settings = GuiSettings()
+    settings = default_gui_settings(date(2026, 5, 19))
 
     assert settings.roster_url == "https://3rdinf.us/milhq/roster"
     assert settings.ceremony_date == "2026-06-07"
@@ -30,6 +37,24 @@ def test_gui_settings_defaults_match_unit_report() -> None:
     assert settings.award_row_selector == "#award-record tbody tr"
     assert settings.award_name_selector == "td:nth-child(2)"
     assert settings.award_date_selector == "td:nth-child(1)"
+
+
+def test_ceremony_date_uses_second_sunday_when_first_sunday_is_early() -> None:
+    assert first_ceremony_date_for_month(2026, 2) == date(2026, 2, 8)
+    assert first_ceremony_date_for_month(2026, 3) == date(2026, 3, 8)
+    assert first_ceremony_date_for_month(2026, 5) == date(2026, 5, 10)
+
+
+def test_ceremony_date_uses_first_sunday_when_not_early() -> None:
+    assert first_ceremony_date_for_month(2026, 1) == date(2026, 1, 4)
+    assert first_ceremony_date_for_month(2026, 6) == date(2026, 6, 7)
+
+
+def test_next_ceremony_date_uses_current_or_next_month() -> None:
+    assert next_ceremony_date(date(2026, 5, 9)) == date(2026, 5, 10)
+    assert next_ceremony_date(date(2026, 5, 10)) == date(2026, 5, 10)
+    assert next_ceremony_date(date(2026, 5, 11)) == date(2026, 6, 7)
+    assert next_ceremony_date(date(2026, 12, 7)) == date(2027, 1, 10)
 
 
 def test_unit_presets_include_supported_roster_sections() -> None:
@@ -64,7 +89,7 @@ def test_load_gui_settings_preserves_defaults_for_unknown_keys(tmp_path) -> None
 
     assert settings.roster_url == "https://example.test/roster"
     assert settings.open_award_tab is True
-    assert settings.output_path == GuiSettings().output_path
+    assert settings.output_path == default_gui_settings().output_path
 
 
 def test_load_gui_settings_falls_back_from_custom_section_text(tmp_path) -> None:
@@ -76,4 +101,4 @@ def test_load_gui_settings_falls_back_from_custom_section_text(tmp_path) -> None
 
     settings = _load_settings(settings_path)
 
-    assert settings.roster_section_text == GuiSettings().roster_section_text
+    assert settings.roster_section_text == default_gui_settings().roster_section_text

@@ -8,7 +8,7 @@ import queue
 import threading
 import tkinter as tk
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -40,7 +40,7 @@ class GuiSettings:
     """User-editable settings persisted for the GUI."""
 
     roster_url: str = "https://3rdinf.us/milhq/roster"
-    ceremony_date: str = "2026-06-07"
+    ceremony_date: str = ""
     output_path: str = "squad_report.csv"
     roster_section_text: str = "Alpha Company, First Platoon Headquarters"
     roster_section_selector: str = "li.card.mb-4"
@@ -81,7 +81,7 @@ class GcmGui(tk.Tk):
         return {
             "roster_url": tk.StringVar(value=settings.roster_url),
             "ceremony_date": tk.StringVar(
-                value=settings.ceremony_date or date.today().isoformat()
+                value=settings.ceremony_date or next_ceremony_date().isoformat()
             ),
             "output_path": tk.StringVar(value=settings.output_path),
             "roster_section_text": tk.StringVar(
@@ -461,7 +461,7 @@ class GcmGui(tk.Tk):
             variable.set(value)
 
     def _reset_to_defaults(self) -> None:
-        self._apply_settings(GuiSettings())
+        self._apply_settings(default_gui_settings())
         self._save_settings(show_message=False)
         self._append_log("Reset settings to unit defaults.")
 
@@ -503,19 +503,58 @@ def _settings_path() -> Path:
 def _preset_or_default(value: str) -> str:
     if value in UNIT_PRESETS:
         return value
-    return GuiSettings().roster_section_text
+    return default_gui_settings().roster_section_text
+
+
+def first_ceremony_date_for_month(year: int, month: int) -> date:
+    """Return the ceremony date for a specific month."""
+
+    first_day = date(year, month, 1)
+    days_until_sunday = (6 - first_day.weekday()) % 7
+    first_sunday = first_day.replace(day=1 + days_until_sunday)
+    if first_sunday.day <= 3:
+        return first_sunday.replace(day=first_sunday.day + 7)
+    return first_sunday
+
+
+def next_ceremony_date(today: date | None = None) -> date:
+    """Return the next ceremony date on or after today."""
+
+    current_date = today or date.today()
+    ceremony_date = first_ceremony_date_for_month(
+        current_date.year,
+        current_date.month,
+    )
+    if ceremony_date >= current_date:
+        return ceremony_date
+
+    next_month = current_date.month + 1
+    next_year = current_date.year
+    if next_month == 13:
+        next_month = 1
+        next_year += 1
+    return first_ceremony_date_for_month(next_year, next_month)
+
+
+def default_gui_settings(today: date | None = None) -> GuiSettings:
+    """Return GUI defaults with a current ceremony date."""
+
+    return replace(
+        GuiSettings(),
+        ceremony_date=next_ceremony_date(today).isoformat(),
+    )
 
 
 def _load_settings(path: Path) -> GuiSettings:
     if not path.exists():
-        return GuiSettings()
+        return default_gui_settings()
 
     try:
         raw_settings = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return GuiSettings()
+        return default_gui_settings()
 
-    defaults = asdict(GuiSettings())
+    defaults = asdict(default_gui_settings())
     defaults.update(
         {
             key: value
