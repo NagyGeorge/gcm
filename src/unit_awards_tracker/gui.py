@@ -7,12 +7,15 @@ import os
 import queue
 import threading
 import tkinter as tk
+import webbrowser
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+from urllib.request import Request, urlopen
 
+from unit_awards_tracker import __version__
 from unit_awards_tracker.config import ScraperConfig
 from unit_awards_tracker.eligibility import calculate_gcm_eligibility
 from unit_awards_tracker.html_scraper import HtmlUnitRosterScraper
@@ -21,6 +24,8 @@ from unit_awards_tracker.report import write_csv_report
 
 APP_NAME = "UnitAwardsTracker"
 DATE_FORMAT = "%Y-%m-%d"
+LATEST_RELEASE_API_URL = "https://api.github.com/repos/NagyGeorge/gcm/releases/latest"
+WINDOWS_RELEASE_ASSET = "GCMReport-Windows.zip"
 UNIT_PRESETS = (
     "First Battalion Headquarters",
     "Alpha Company Headquarters",
@@ -58,6 +63,15 @@ class GuiSettings:
     open_award_tab: bool = False
 
 
+@dataclass(frozen=True)
+class ReleaseInfo:
+    """GitHub release details needed by the GUI updater."""
+
+    version: str
+    release_url: str
+    download_url: str
+
+
 class GcmGui(tk.Tk):
     """Desktop interface for unit GCM reports."""
 
@@ -72,6 +86,7 @@ class GcmGui(tk.Tk):
         self._worker_messages: queue.Queue[tuple[str, object]] = queue.Queue()
         self._results: list[EligibilityResult] = []
         self._running = False
+        self._checking_updates = False
 
         self._variables = self._build_variables(self._settings)
         self._build_ui()
@@ -158,6 +173,12 @@ class GcmGui(tk.Tk):
             text="Export Current Results",
             command=self._export_current_results,
         ).pack(side=tk.LEFT, padx=(8, 0))
+        self._update_button = ttk.Button(
+            controls,
+            text="Check for Updates",
+            command=self._check_for_updates,
+        )
+        self._update_button.pack(side=tk.LEFT, padx=(8, 0))
         self._summary = ttk.Label(controls, text="No report run yet.")
         self._summary.pack(side=tk.LEFT, padx=(16, 0))
 
@@ -397,6 +418,12 @@ class GcmGui(tk.Tk):
                 self._set_running(False)
                 self._append_log(f"Error: {payload}")
                 messagebox.showerror("Report failed", str(payload))
+            elif message_type == "update_done":
+                self._handle_update_result(payload)
+            elif message_type == "update_error":
+                self._set_checking_updates(False)
+                self._append_log(f"Update check failed: {payload}")
+                messagebox.showerror("Update check failed", str(payload))
 
         self.after(100, self._poll_worker_messages)
 
@@ -445,6 +472,52 @@ class GcmGui(tk.Tk):
         self._variables["output_path"].set(str(output_path))
         self._append_log(f"Exported current results to {output_path}.")
 
+    def _check_for_updates(self) -> None:
+        if self._checking_updates:
+            return
+
+        self._set_checking_updates(True)
+        self._append_log("Checking for updates...")
+        worker = threading.Thread(
+            target=self._check_for_updates_worker,
+            daemon=True,
+        )
+        worker.start()
+
+    def _check_for_updates_worker(self) -> None:
+        try:
+            release = fetch_latest_release()
+            self._worker_messages.put(("update_done", release))
+        except Exception as exc:  # noqa: BLE001
+            self._worker_messages.put(("update_error", exc))
+
+    def _handle_update_result(self, payload: object) -> None:
+        self._set_checking_updates(False)
+        release = payload
+        if not isinstance(release, ReleaseInfo):
+            messagebox.showerror("Update check failed", "Unexpected release response.")
+            return
+
+        if not is_newer_version(release.version, __version__):
+            self._append_log(f"GCM Report is up to date at {__version__}.")
+            messagebox.showinfo(
+                "No update available",
+                f"GCM Report is up to date at version {__version__}.",
+            )
+            return
+
+        self._append_log(f"Update available: {release.version}.")
+        should_open = messagebox.askyesno(
+            "Update available",
+            (
+                f"GCM Report {release.version} is available.\n\n"
+                f"Current version: {__version__}\n\n"
+                "Open the Windows download now?"
+            ),
+        )
+        if should_open:
+            webbrowser.open(release.download_url or release.release_url)
+
     def _settings_from_form(self) -> GuiSettings:
         values: dict[str, object] = {}
         for key, variable in self._variables.items():
@@ -491,6 +564,10 @@ class GcmGui(tk.Tk):
     def _set_running(self, running: bool) -> None:
         self._running = running
         self._run_button.configure(state=tk.DISABLED if running else tk.NORMAL)
+
+    def _set_checking_updates(self, checking: bool) -> None:
+        self._checking_updates = checking
+        self._update_button.configure(state=tk.DISABLED if checking else tk.NORMAL)
 
 
 def _settings_path() -> Path:
@@ -543,6 +620,79 @@ def default_gui_settings(today: date | None = None) -> GuiSettings:
         GuiSettings(),
         ceremony_date=next_ceremony_date(today).isoformat(),
     )
+
+
+def version_parts(version: str) -> tuple[int, ...]:
+    """Return comparable integer parts for a version string."""
+
+    normalized = version.removeprefix("v")
+    parts: list[int] = []
+    for part in normalized.split("."):
+        number = ""
+        for character in part:
+            if not character.isdigit():
+                break
+            number += character
+        parts.append(int(number or "0"))
+    return tuple(parts)
+
+
+def is_newer_version(candidate: str, current: str) -> bool:
+    """Return whether candidate is newer than current."""
+
+    candidate_parts = version_parts(candidate)
+    current_parts = version_parts(current)
+    max_length = max(len(candidate_parts), len(current_parts))
+    padded_candidate = candidate_parts + (0,) * (max_length - len(candidate_parts))
+    padded_current = current_parts + (0,) * (max_length - len(current_parts))
+    return padded_candidate > padded_current
+
+
+def release_info_from_payload(payload: dict[str, object]) -> ReleaseInfo:
+    """Extract GUI update information from a GitHub release payload."""
+
+    version = str(payload.get("tag_name") or "")
+    release_url = str(payload.get("html_url") or "")
+    download_url = ""
+    assets = payload.get("assets")
+    if isinstance(assets, list):
+        for asset in assets:
+            if not isinstance(asset, dict):
+                continue
+            if asset.get("name") != WINDOWS_RELEASE_ASSET:
+                continue
+            download_url = str(asset.get("browser_download_url") or "")
+            break
+
+    if not version:
+        raise ValueError("Latest release did not include a version tag.")
+    if not release_url:
+        raise ValueError("Latest release did not include a release URL.")
+    if not download_url:
+        download_url = release_url
+
+    return ReleaseInfo(
+        version=version,
+        release_url=release_url,
+        download_url=download_url,
+    )
+
+
+def fetch_latest_release() -> ReleaseInfo:
+    """Fetch the latest GitHub release for update checks."""
+
+    request = Request(
+        LATEST_RELEASE_API_URL,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": f"unit-awards-tracker/{__version__}",
+        },
+    )
+    with urlopen(request, timeout=15) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("Latest release response was not an object.")
+    return release_info_from_payload(payload)
 
 
 def _load_settings(path: Path) -> GuiSettings:

@@ -8,7 +8,10 @@ from unit_awards_tracker.gui import (
     _load_settings,
     default_gui_settings,
     first_ceremony_date_for_month,
+    is_newer_version,
     next_ceremony_date,
+    release_info_from_payload,
+    version_parts,
 )
 
 
@@ -55,6 +58,42 @@ def test_next_ceremony_date_uses_current_or_next_month() -> None:
     assert next_ceremony_date(date(2026, 5, 10)) == date(2026, 5, 10)
     assert next_ceremony_date(date(2026, 5, 11)) == date(2026, 6, 7)
     assert next_ceremony_date(date(2026, 12, 7)) == date(2027, 1, 10)
+
+
+def test_version_parts_normalizes_release_tags() -> None:
+    assert version_parts("v0.3.1") == (0, 3, 1)
+    assert version_parts("1.2.3") == (1, 2, 3)
+    assert version_parts("1.2.3-beta") == (1, 2, 3)
+
+
+def test_is_newer_version_compares_padded_versions() -> None:
+    assert is_newer_version("v0.3.2", "0.3.1") is True
+    assert is_newer_version("v0.4.0", "0.3.9") is True
+    assert is_newer_version("v0.3.1", "0.3.1") is False
+    assert is_newer_version("v0.3", "0.3.1") is False
+
+
+def test_release_info_from_payload_prefers_windows_asset() -> None:
+    release = release_info_from_payload(
+        {
+            "tag_name": "v0.4.0",
+            "html_url": "https://github.com/NagyGeorge/gcm/releases/tag/v0.4.0",
+            "assets": [
+                {
+                    "name": "source.zip",
+                    "browser_download_url": "https://example.test/source.zip",
+                },
+                {
+                    "name": "GCMReport-Windows.zip",
+                    "browser_download_url": "https://example.test/windows.zip",
+                },
+            ],
+        }
+    )
+
+    assert release.version == "v0.4.0"
+    assert release.release_url == "https://github.com/NagyGeorge/gcm/releases/tag/v0.4.0"
+    assert release.download_url == "https://example.test/windows.zip"
 
 
 def test_unit_presets_include_supported_roster_sections() -> None:
