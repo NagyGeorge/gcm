@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass, replace
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
@@ -18,6 +19,15 @@ ProgressCallback = Callable[[int, int, str], None]
 _HAS_TEXT_PATTERN = re.compile(
     r""":has-text\((?P<quote>["'])(?P<text>.*?)(?P=quote)\)"""
 )
+_AWARD_QUANTITY_PATTERN = re.compile(r"\bx\s*(?P<quantity>\d+)\b", re.I)
+
+
+@dataclass(frozen=True)
+class DisplayedAward:
+    """Award shown in the profile award rack."""
+
+    name: str
+    quantity: int
 
 
 class HtmlUnitRosterScraper:
@@ -144,11 +154,19 @@ class HtmlUnitRosterScraper:
             )
 
         seen_award_names = {award.name.lower() for award in awards}
-        for title in _award_titles(profile_soup):
-            if title.lower() in seen_award_names:
+        for displayed_award in _displayed_awards(profile_soup):
+            if displayed_award.name.lower() in seen_award_names:
+                awards = _merge_award_quantity(awards, displayed_award)
                 continue
-            awards.append(AwardRecord(name=title, awarded_date=None, raw_date=None))
-            seen_award_names.add(title.lower())
+            awards.append(
+                AwardRecord(
+                    name=displayed_award.name,
+                    awarded_date=None,
+                    raw_date=None,
+                    quantity=displayed_award.quantity,
+                )
+            )
+            seen_award_names.add(displayed_award.name.lower())
 
         return awards
 
@@ -250,13 +268,41 @@ def _select_one(parent: BeautifulSoup | Tag, selector: str) -> Tag | None:
     return elements[0] if elements else None
 
 
-def _award_titles(parent: BeautifulSoup | Tag) -> list[str]:
-    titles: list[str] = []
+def _displayed_awards(parent: BeautifulSoup | Tag) -> list[DisplayedAward]:
+    awards: list[DisplayedAward] = []
     for element in parent.select("[title]"):
         title = element.get("title")
         if not isinstance(title, str):
             continue
         title = " ".join(title.split())
         if title:
-            titles.append(title)
-    return titles
+            awards.append(
+                DisplayedAward(
+                    name=title,
+                    quantity=_award_quantity(element),
+                )
+            )
+    return awards
+
+
+def _award_quantity(element: Tag) -> int:
+    for child in element.find_all("span"):
+        match = _AWARD_QUANTITY_PATTERN.search(_element_text(child))
+        if match is not None:
+            return int(match.group("quantity"))
+    return 1
+
+
+def _merge_award_quantity(
+    awards: list[AwardRecord],
+    displayed_award: DisplayedAward,
+) -> list[AwardRecord]:
+    for index, award in enumerate(awards):
+        if award.name.lower() != displayed_award.name.lower():
+            continue
+        awards[index] = replace(
+            award,
+            quantity=max(award.quantity, displayed_award.quantity),
+        )
+        break
+    return awards

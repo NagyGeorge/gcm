@@ -24,11 +24,14 @@ from unit_awards_tracker.html_scraper import HtmlUnitRosterScraper
 from unit_awards_tracker.models import (
     CombatAwardEligibilityResult,
     EligibilityResult,
+    OverseasServiceBarResult,
     TisAwardEligibilityResult,
 )
+from unit_awards_tracker.osb_awards import calculate_osb_award
 from unit_awards_tracker.report import (
     write_combat_awards_csv_report,
     write_csv_report,
+    write_osb_csv_report,
     write_tis_awards_csv_report,
 )
 from unit_awards_tracker.tis_awards import calculate_tis_award_eligibility
@@ -136,6 +139,7 @@ class GcmGui(tk.Tk):
         self._results: list[EligibilityResult] = []
         self._tis_results: list[TisAwardEligibilityResult] = []
         self._combat_results: list[CombatAwardEligibilityResult] = []
+        self._osb_results: list[OverseasServiceBarResult] = []
         self._running = False
         self._checking_updates = False
 
@@ -246,6 +250,11 @@ class GcmGui(tk.Tk):
             text="Export Combat Results",
             command=self._export_combat_results,
         ).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(
+            controls,
+            text="Export OSB Results",
+            command=self._export_osb_results,
+        ).pack(side=tk.LEFT, padx=(8, 0))
         self._update_button = ttk.Button(
             controls,
             text="Check for Updates",
@@ -341,6 +350,12 @@ class GcmGui(tk.Tk):
         combat_tab.rowconfigure(0, weight=1)
         notebook.add(combat_tab, text="Combat Awards")
         self._build_combat_table(combat_tab)
+
+        osb_tab = ttk.Frame(notebook)
+        osb_tab.columnconfigure(0, weight=1)
+        osb_tab.rowconfigure(0, weight=1)
+        notebook.add(osb_tab, text="OSB")
+        self._build_osb_table(osb_tab)
 
     def _build_tis_table(self, parent: ttk.Frame) -> None:
         columns = (
@@ -449,6 +464,68 @@ class GcmGui(tk.Tk):
         )
         self._combat_table.configure(yscrollcommand=table_scroll.set)
         self._combat_table.grid(row=0, column=0, sticky="nsew")
+        table_scroll.grid(row=0, column=1, sticky="ns")
+
+    def _build_osb_table(self, parent: ttk.Frame) -> None:
+        columns = (
+            "eligible",
+            "rank",
+            "name",
+            "unit",
+            "puc",
+            "vua",
+            "asua",
+            "cy_ops",
+            "existing",
+            "recommended",
+            "due",
+            "reason",
+        )
+        self._osb_table = ttk.Treeview(
+            parent,
+            columns=columns,
+            show="headings",
+            height=18,
+        )
+        headings = {
+            "eligible": "Due",
+            "rank": "Rank",
+            "name": "Name",
+            "unit": "Unit",
+            "puc": "PUC",
+            "vua": "VUA",
+            "asua": "ASUA",
+            "cy_ops": "CY Ops",
+            "existing": "Current OSB",
+            "recommended": "Recommended",
+            "due": "Due Count",
+            "reason": "Reason",
+        }
+        widths = {
+            "eligible": 60,
+            "rank": 120,
+            "name": 180,
+            "unit": 220,
+            "puc": 60,
+            "vua": 60,
+            "asua": 60,
+            "cy_ops": 80,
+            "existing": 100,
+            "recommended": 110,
+            "due": 80,
+            "reason": 360,
+        }
+        for column in columns:
+            self._osb_table.heading(column, text=headings[column])
+            self._osb_table.column(column, width=widths[column], minwidth=50)
+
+        table_scroll = ttk.Scrollbar(
+            parent,
+            orient=tk.VERTICAL,
+            command=self._osb_table.yview,
+        )
+        self._osb_table.configure(yscrollcommand=table_scroll.set)
+        self._osb_table.grid(row=0, column=0, sticky="nsew")
         table_scroll.grid(row=0, column=1, sticky="ns")
 
     def _add_entry(
@@ -616,11 +693,16 @@ class GcmGui(tk.Tk):
                     ceremony_date,
                 )
             ]
+            osb_results = [
+                calculate_osb_award(member, ceremony_date) for member in members
+            ]
             write_csv_report(results, output_path)
             tis_output_path = _tis_output_path(output_path)
             write_tis_awards_csv_report(tis_results, tis_output_path)
             combat_output_path = _combat_output_path(output_path)
             write_combat_awards_csv_report(combat_results, combat_output_path)
+            osb_output_path = _osb_output_path(output_path)
+            write_osb_csv_report(osb_results, osb_output_path)
             self._worker_messages.put(
                 (
                     "done",
@@ -628,9 +710,11 @@ class GcmGui(tk.Tk):
                         results,
                         tis_results,
                         combat_results,
+                        osb_results,
                         output_path,
                         tis_output_path,
                         combat_output_path,
+                        osb_output_path,
                     ),
                 )
             )
@@ -661,25 +745,30 @@ class GcmGui(tk.Tk):
                     results,
                     tis_results,
                     combat_results,
+                    osb_results,
                     output_path,
                     tis_output_path,
                     combat_output_path,
+                    osb_output_path,
                 ) = payload
                 self._results = list(results)
                 self._tis_results = list(tis_results)
                 self._combat_results = list(combat_results)
+                self._osb_results = list(osb_results)
                 self._refresh_result_tables()
                 due_count = sum(result.eligible for result in self._results)
                 tis_due_count = sum(result.eligible for result in self._tis_results)
                 combat_due_count = sum(
                     result.eligible for result in self._combat_results
                 )
+                osb_due_count = sum(result.eligible for result in self._osb_results)
                 self._summary.configure(
                     text=(
                         f"GCM {due_count} due / {len(self._results)} total; "
                         f"TIS {tis_due_count} due / {len(self._tis_results)} rows; "
                         f"Combat {combat_due_count} due / "
-                        f"{len(self._combat_results)} rows"
+                        f"{len(self._combat_results)} rows; "
+                        f"OSB {osb_due_count} due / {len(self._osb_results)} rows"
                     )
                 )
                 self._append_log(f"Wrote report to {output_path}.")
@@ -687,6 +776,7 @@ class GcmGui(tk.Tk):
                 self._append_log(
                     f"Wrote combat awards report to {combat_output_path}."
                 )
+                self._append_log(f"Wrote OSB report to {osb_output_path}.")
                 if not self._results:
                     self._append_log("No members were found for the selected preset.")
                     messagebox.showwarning(
@@ -717,6 +807,7 @@ class GcmGui(tk.Tk):
         self._refresh_results_table()
         self._refresh_tis_results_table()
         self._refresh_combat_results_table()
+        self._refresh_osb_results_table()
 
     def _refresh_results_table(self) -> None:
         for item in self._table.get_children():
@@ -744,6 +835,15 @@ class GcmGui(tk.Tk):
         if self._variables["show_due_only"].get():
             results = [result for result in results if result.eligible]
         self._populate_combat_results(results)
+
+    def _refresh_osb_results_table(self) -> None:
+        for item in self._osb_table.get_children():
+            self._osb_table.delete(item)
+
+        results = self._osb_results
+        if self._variables["show_due_only"].get():
+            results = [result for result in results if result.eligible]
+        self._populate_osb_results(results)
 
     def _populate_results(self, results: list[EligibilityResult]) -> None:
         for result in sorted(results, key=result_sort_key):
@@ -819,6 +919,31 @@ class GcmGui(tk.Tk):
                 ),
             )
 
+    def _populate_osb_results(
+        self,
+        results: list[OverseasServiceBarResult],
+    ) -> None:
+        for result in sorted(results, key=osb_result_sort_key):
+            member = result.member
+            self._osb_table.insert(
+                "",
+                tk.END,
+                values=(
+                    "Yes" if result.eligible else "No",
+                    member.rank,
+                    member.name,
+                    member.unit,
+                    result.puc_count,
+                    result.vua_count,
+                    result.asua_count,
+                    result.current_year_operation_count,
+                    result.existing_osb_count,
+                    result.recommended_osb_count,
+                    result.due_count,
+                    result.reason,
+                ),
+            )
+
     def _export_current_results(self) -> None:
         if not self._results:
             messagebox.showinfo("No results", "Run a report before exporting.")
@@ -870,6 +995,23 @@ class GcmGui(tk.Tk):
         output_path = Path(path).expanduser()
         write_combat_awards_csv_report(self._combat_results, output_path)
         self._append_log(f"Exported current combat results to {output_path}.")
+
+    def _export_osb_results(self) -> None:
+        if not self._osb_results:
+            messagebox.showinfo("No results", "Run a report before exporting.")
+            return
+
+        path = filedialog.asksaveasfilename(
+            title="Export current OSB report",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+
+        output_path = Path(path).expanduser()
+        write_osb_csv_report(self._osb_results, output_path)
+        self._append_log(f"Exported current OSB results to {output_path}.")
 
     def _check_for_updates(self) -> None:
         if self._checking_updates:
@@ -953,12 +1095,15 @@ class GcmGui(tk.Tk):
         self._results = []
         self._tis_results = []
         self._combat_results = []
+        self._osb_results = []
         for item in self._table.get_children():
             self._table.delete(item)
         for item in self._tis_table.get_children():
             self._tis_table.delete(item)
         for item in self._combat_table.get_children():
             self._combat_table.delete(item)
+        for item in self._osb_table.get_children():
+            self._osb_table.delete(item)
         self._summary.configure(text="Running...")
 
     def _append_log(self, message: str) -> None:
@@ -1079,6 +1224,16 @@ def combat_result_sort_key(
     )
 
 
+def osb_result_sort_key(result: OverseasServiceBarResult) -> tuple[bool, int, str]:
+    """Return the table sort key for an OSB recommendation."""
+
+    return (
+        not result.eligible,
+        rank_sort_value(result.member.rank),
+        result.member.name.lower(),
+    )
+
+
 def _tis_output_path(output_path: Path) -> Path:
     """Return the sibling report path for TIS award results."""
 
@@ -1091,6 +1246,13 @@ def _combat_output_path(output_path: Path) -> Path:
 
     suffix = output_path.suffix or ".csv"
     return output_path.with_name(f"{output_path.stem}_combat_awards{suffix}")
+
+
+def _osb_output_path(output_path: Path) -> Path:
+    """Return the sibling report path for OSB recommendations."""
+
+    suffix = output_path.suffix or ".csv"
+    return output_path.with_name(f"{output_path.stem}_osb{suffix}")
 
 
 def version_parts(version: str) -> tuple[int, ...]:

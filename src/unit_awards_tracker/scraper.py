@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from dataclasses import replace
 from urllib.parse import urljoin
 
 from playwright.sync_api import (
@@ -15,6 +17,8 @@ from playwright.sync_api import (
 from unit_awards_tracker.config import ScraperConfig
 from unit_awards_tracker.models import AwardRecord, CombatRecord, Member
 from unit_awards_tracker.text_utils import clean_status_text, parse_award_date
+
+_AWARD_QUANTITY_PATTERN = re.compile(r"\bx\s*(?P<quantity>\d+)\b", re.I)
 
 
 class UnitRosterScraper:
@@ -145,9 +149,20 @@ class UnitRosterScraper:
             if not title:
                 continue
             title = " ".join(title.split())
-            if not title or title.lower() in seen_award_names:
+            if not title:
                 continue
-            awards.append(AwardRecord(name=title, awarded_date=None, raw_date=None))
+            quantity = _award_quantity(titles.nth(index).inner_text())
+            if title.lower() in seen_award_names:
+                awards = _merge_award_quantity(awards, title, quantity)
+                continue
+            awards.append(
+                AwardRecord(
+                    name=title,
+                    awarded_date=None,
+                    raw_date=None,
+                    quantity=quantity,
+                )
+            )
             seen_award_names.add(title.lower())
 
         return awards
@@ -199,3 +214,23 @@ def _locator_text_or_default(locator, selector: str, default: str | None) -> str
         return default
     value = child.inner_text().strip()
     return value or default
+
+
+def _award_quantity(text: str) -> int:
+    match = _AWARD_QUANTITY_PATTERN.search(text)
+    if match is None:
+        return 1
+    return int(match.group("quantity"))
+
+
+def _merge_award_quantity(
+    awards: list[AwardRecord],
+    title: str,
+    quantity: int,
+) -> list[AwardRecord]:
+    for index, award in enumerate(awards):
+        if award.name.lower() != title.lower():
+            continue
+        awards[index] = replace(award, quantity=max(award.quantity, quantity))
+        break
+    return awards

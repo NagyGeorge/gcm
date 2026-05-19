@@ -161,21 +161,41 @@ def test_html_scraper_collects_displayed_award_titles() -> None:
         "https://example.test/milhq/soldier/1": """
             <main>
               <div title="Defense Superior Service Medal (DSSM)"></div>
-              <table id="award-record"><tbody></tbody></table>
+              <div title="Overseas Service Bar">
+                <span>x4</span>
+              </div>
+              <table id="award-record">
+                <tbody>
+                  <tr>
+                    <td>2026-01-04</td>
+                    <td>Overseas Service Bar</td>
+                  </tr>
+                </tbody>
+              </table>
             </main>
         """,
     }
     scraper = HtmlUnitRosterScraper(
-        ScraperConfig(roster_section_selector="section.card"),
+        ScraperConfig(
+            roster_section_selector="section.card",
+            award_row_selector="#award-record tbody tr",
+            award_name_selector="td:nth-child(2)",
+            award_date_selector="td:nth-child(1)",
+        ),
         fetcher=pages.__getitem__,
     )
 
     member = scraper.scrape("https://example.test/roster")[0]
+    awards_by_name = {award.name: award for award in member.awards}
 
-    assert len(member.awards) == 1
+    assert len(member.awards) == 2
     # Displayed medal-rack awards may not include award dates.
-    assert member.awards[0].name == "Defense Superior Service Medal (DSSM)"
-    assert member.awards[0].awarded_date is None
+    assert (
+        awards_by_name["Defense Superior Service Medal (DSSM)"].awarded_date is None
+    )
+    assert awards_by_name["Defense Superior Service Medal (DSSM)"].quantity == 1
+    assert awards_by_name["Overseas Service Bar"].awarded_date == date(2026, 1, 4)
+    assert awards_by_name["Overseas Service Bar"].quantity == 4
 
 
 def test_html_scraper_reports_profile_progress() -> None:

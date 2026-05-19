@@ -8,6 +8,7 @@ from pathlib import Path
 from unit_awards_tracker.models import (
     CombatAwardEligibilityResult,
     EligibilityResult,
+    OverseasServiceBarResult,
     TisAwardEligibilityResult,
 )
 
@@ -46,6 +47,23 @@ COMBAT_FIELDNAMES = [
     "position",
     "profile_url",
     "current_year_operation_count",
+    "eligible",
+    "reason",
+]
+OSB_FIELDNAMES = [
+    "rank",
+    "name",
+    "unit",
+    "specialty",
+    "position",
+    "profile_url",
+    "puc_count",
+    "vua_count",
+    "asua_count",
+    "current_year_operation_count",
+    "existing_osb_count",
+    "recommended_osb_count",
+    "due_count",
     "eligible",
     "reason",
 ]
@@ -138,6 +156,41 @@ def write_combat_awards_csv_report(
                     "current_year_operation_count": (
                         result.current_year_operation_count
                     ),
+                    "eligible": str(result.eligible).lower(),
+                    "reason": result.reason,
+                }
+            )
+
+
+def write_osb_csv_report(
+    results: list[OverseasServiceBarResult],
+    output_path: Path,
+) -> None:
+    """Write Overseas Service Bar recommendations to CSV."""
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=OSB_FIELDNAMES)
+        writer.writeheader()
+        for result in results:
+            member = result.member
+            writer.writerow(
+                {
+                    "rank": member.rank,
+                    "name": member.name,
+                    "unit": member.unit,
+                    "specialty": member.specialty or "",
+                    "position": member.position or "",
+                    "profile_url": member.profile_url,
+                    "puc_count": result.puc_count,
+                    "vua_count": result.vua_count,
+                    "asua_count": result.asua_count,
+                    "current_year_operation_count": (
+                        result.current_year_operation_count
+                    ),
+                    "existing_osb_count": result.existing_osb_count,
+                    "recommended_osb_count": result.recommended_osb_count,
+                    "due_count": result.due_count,
                     "eligible": str(result.eligible).lower(),
                     "reason": result.reason,
                 }

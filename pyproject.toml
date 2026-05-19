@@ -1,6 +1,6 @@
 [project]
 name = "unit-awards-tracker"
-version = "0.5.4"
+version = "0.5.5"
 description = "CLI tool for tracking Good Conduct Medal eligibility from unit roster data."
 readme = "README.md"
 requires-python = ">=3.12"

@@ -13,6 +13,7 @@ class AwardRecord:
     name: str
     awarded_date: date | None
     raw_date: str | None = None
+    quantity: int = 1
 
 
 @dataclass(frozen=True)
@@ -76,5 +77,22 @@ class CombatAwardEligibilityResult:
     award_abbreviation: str
     next_award_number: int | None
     current_year_operation_count: int
+    eligible: bool
+    reason: str
+
+
+@dataclass(frozen=True)
+class OverseasServiceBarResult:
+    """Overseas Service Bar count recommendation for a member."""
+
+    member: Member
+    ceremony_date: date
+    puc_count: int
+    vua_count: int
+    asua_count: int
+    current_year_operation_count: int
+    existing_osb_count: int
+    recommended_osb_count: int
+    due_count: int
     eligible: bool
     reason: str
