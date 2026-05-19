@@ -65,6 +65,9 @@ UNIT_PRESETS = (
     "Alpha Company, Second Platoon Headquarters",
     "Alpha Company, Second Platoon, First Squad",
     "Alpha Company, Second Platoon, Second Squad",
+    "Alpha Company, Third Platoon Headquarters",
+    "Alpha Company, Third Platoon, First Squad",
+    "Alpha Company, Third Platoon, Second Squad",
 )
 
 
