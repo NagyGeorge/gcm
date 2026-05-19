@@ -8,6 +8,7 @@ from unit_awards_tracker.gui import (
     _load_settings,
     default_gui_settings,
     first_ceremony_date_for_month,
+    gui_settings_from_values,
     is_newer_version,
     next_ceremony_date,
     release_info_from_payload,
@@ -118,6 +119,19 @@ def test_result_sort_key_orders_due_then_rank_then_name() -> None:
         ("Sergeant", "Charlie", True),
         ("Private First Class", "Bravo", False),
     ]
+
+
+def test_gui_settings_from_values_ignores_transient_controls() -> None:
+    settings = gui_settings_from_values(
+        {
+            "roster_url": " https://example.test/roster ",
+            "output_path": "report.csv",
+            "show_due_only": True,
+        }
+    )
+
+    assert settings.roster_url == " https://example.test/roster "
+    assert settings.output_path == "report.csv"
 
 
 def test_unit_presets_include_supported_roster_sections() -> None:

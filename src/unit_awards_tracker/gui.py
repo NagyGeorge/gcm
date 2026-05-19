@@ -9,7 +9,7 @@ import threading
 import tkinter as tk
 import webbrowser
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, fields, replace
 from datetime import date, datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -82,6 +82,9 @@ class GuiSettings:
     award_date_selector: str = "td:nth-child(1)"
     include_non_active_duty: bool = False
     open_award_tab: bool = False
+
+
+GUI_SETTING_KEYS = frozenset(field.name for field in fields(GuiSettings))
 
 
 @dataclass(frozen=True)
@@ -576,12 +579,14 @@ class GcmGui(tk.Tk):
     def _settings_from_form(self) -> GuiSettings:
         values: dict[str, object] = {}
         for key, variable in self._variables.items():
+            if key not in GUI_SETTING_KEYS:
+                continue
             value = variable.get()
             if isinstance(variable, tk.StringVar):
                 values[key] = str(value).strip()
             else:
                 values[key] = bool(value)
-        return GuiSettings(**values)
+        return gui_settings_from_values(values)
 
     def _apply_settings(self, settings: GuiSettings) -> None:
         for key, value in asdict(settings).items():
@@ -674,6 +679,14 @@ def default_gui_settings(today: date | None = None) -> GuiSettings:
     return replace(
         GuiSettings(),
         ceremony_date=next_ceremony_date(today).isoformat(),
+    )
+
+
+def gui_settings_from_values(values: dict[str, object]) -> GuiSettings:
+    """Build persisted GUI settings while ignoring transient UI controls."""
+
+    return GuiSettings(
+        **{key: value for key, value in values.items() if key in GUI_SETTING_KEYS}
     )
 
 
