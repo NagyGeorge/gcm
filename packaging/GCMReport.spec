@@ -1,14 +1,27 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
+import sys
 
 ROOT = Path.cwd()
+
+
+def linux_tk_binaries():
+    if not sys.platform.startswith("linux"):
+        return []
+
+    python_lib = Path(sys.base_prefix) / "lib"
+    return [
+        (str(path), ".")
+        for library_name in ("libtcl8.6.so", "libtk8.6.so")
+        if (path := python_lib / library_name).exists()
+    ]
 
 
 a = Analysis(
     [str(ROOT / "src" / "unit_awards_tracker" / "gui.py")],
     pathex=[str(ROOT / "src")],
-    binaries=[],
+    binaries=linux_tk_binaries(),
     datas=[],
     hiddenimports=[],
     hookspath=[],

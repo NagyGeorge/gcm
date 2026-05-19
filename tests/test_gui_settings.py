@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from unittest.mock import patch
 
 from unit_awards_tracker.gui import (
+    LINUX_RELEASE_ASSET,
     UNIT_PRESETS,
+    WINDOWS_RELEASE_ASSET,
     _load_settings,
     default_gui_settings,
     first_ceremony_date_for_month,
     gui_settings_from_values,
     is_newer_version,
     next_ceremony_date,
+    release_asset_name,
     release_info_from_payload,
     result_sort_key,
     version_parts,
@@ -77,26 +81,55 @@ def test_is_newer_version_compares_padded_versions() -> None:
 
 
 def test_release_info_from_payload_prefers_windows_asset() -> None:
-    release = release_info_from_payload(
-        {
-            "tag_name": "v0.4.0",
-            "html_url": "https://github.com/NagyGeorge/gcm/releases/tag/v0.4.0",
-            "assets": [
-                {
-                    "name": "source.zip",
-                    "browser_download_url": "https://example.test/source.zip",
-                },
-                {
-                    "name": "GCMReport-Windows.zip",
-                    "browser_download_url": "https://example.test/windows.zip",
-                },
-            ],
-        }
-    )
+    with patch("unit_awards_tracker.gui.sys.platform", "win32"):
+        release = release_info_from_payload(
+            {
+                "tag_name": "v0.4.0",
+                "html_url": "https://github.com/NagyGeorge/gcm/releases/tag/v0.4.0",
+                "assets": [
+                    {
+                        "name": "source.zip",
+                        "browser_download_url": "https://example.test/source.zip",
+                    },
+                    {
+                        "name": "GCMReport-Windows.zip",
+                        "browser_download_url": "https://example.test/windows.zip",
+                    },
+                ],
+            }
+        )
 
     assert release.version == "v0.4.0"
     assert release.release_url == "https://github.com/NagyGeorge/gcm/releases/tag/v0.4.0"
     assert release.download_url == "https://example.test/windows.zip"
+
+
+def test_release_info_from_payload_prefers_linux_asset() -> None:
+    with patch("unit_awards_tracker.gui.sys.platform", "linux"):
+        release = release_info_from_payload(
+            {
+                "tag_name": "v0.4.0",
+                "html_url": "https://github.com/NagyGeorge/gcm/releases/tag/v0.4.0",
+                "assets": [
+                    {
+                        "name": "GCMReport-Windows.zip",
+                        "browser_download_url": "https://example.test/windows.zip",
+                    },
+                    {
+                        "name": "GCMReport-Linux.tar.gz",
+                        "browser_download_url": "https://example.test/linux.tar.gz",
+                    },
+                ],
+            }
+        )
+
+    assert release.download_url == "https://example.test/linux.tar.gz"
+
+
+def test_release_asset_name_uses_platform_specific_artifacts() -> None:
+    assert release_asset_name("linux") == LINUX_RELEASE_ASSET
+    assert release_asset_name("win32") == WINDOWS_RELEASE_ASSET
+    assert release_asset_name("unknown") == WINDOWS_RELEASE_ASSET
 
 
 def test_result_sort_key_orders_due_then_rank_then_name() -> None:

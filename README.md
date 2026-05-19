@@ -58,7 +58,7 @@ the static profile HTML.
 
 ## GUI
 
-Run the Windows-friendly desktop interface with:
+Run the desktop interface with:
 
 ```bash
 unit-awards-tracker-gui
@@ -69,10 +69,28 @@ does not require browser automation when the roster and profile data are present
 in the returned HTML, and it saves local settings under the user's
 application-data directory.
 
-## Windows Release
+On Linux, install Tk if your Python does not include it:
 
-The release workflow builds a standalone `GCMReport.exe` on GitHub's Windows
-runner and attaches it to tagged releases.
+```bash
+sudo apt-get install tk
+```
+
+You can also test the installed package entry point directly from a venv:
+
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install -e ".[dev]"
+unit-awards-tracker-gui
+```
+
+## GUI Releases
+
+The release workflow builds standalone GUI artifacts on GitHub's Windows and
+Linux runners and attaches them to tagged releases:
+
+- `GCMReport-Windows.zip`
+- `GCMReport-Linux.tar.gz`
 
 To cut a release:
 

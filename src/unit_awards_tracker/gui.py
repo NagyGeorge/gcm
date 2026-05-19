@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import sys
 import threading
 import tkinter as tk
 import webbrowser
@@ -26,6 +27,12 @@ APP_NAME = "UnitAwardsTracker"
 DATE_FORMAT = "%Y-%m-%d"
 LATEST_RELEASE_API_URL = "https://api.github.com/repos/NagyGeorge/gcm/releases/latest"
 WINDOWS_RELEASE_ASSET = "GCMReport-Windows.zip"
+LINUX_RELEASE_ASSET = "GCMReport-Linux.tar.gz"
+RELEASE_ASSETS_BY_PLATFORM = {
+    "linux": LINUX_RELEASE_ASSET,
+    "win32": WINDOWS_RELEASE_ASSET,
+    "cygwin": WINDOWS_RELEASE_ASSET,
+}
 RANK_ORDER = {
     "Recruit": 0,
     "Private": 1,
@@ -570,7 +577,7 @@ class GcmGui(tk.Tk):
             (
                 f"GCM Report {release.version} is available.\n\n"
                 f"Current version: {__version__}\n\n"
-                "Open the Windows download now?"
+                "Open the download now?"
             ),
         )
         if should_open:
@@ -738,12 +745,13 @@ def release_info_from_payload(payload: dict[str, object]) -> ReleaseInfo:
     version = str(payload.get("tag_name") or "")
     release_url = str(payload.get("html_url") or "")
     download_url = ""
+    preferred_asset = release_asset_name()
     assets = payload.get("assets")
     if isinstance(assets, list):
         for asset in assets:
             if not isinstance(asset, dict):
                 continue
-            if asset.get("name") != WINDOWS_RELEASE_ASSET:
+            if asset.get("name") != preferred_asset:
                 continue
             download_url = str(asset.get("browser_download_url") or "")
             break
@@ -760,6 +768,13 @@ def release_info_from_payload(payload: dict[str, object]) -> ReleaseInfo:
         release_url=release_url,
         download_url=download_url,
     )
+
+
+def release_asset_name(platform: str | None = None) -> str:
+    """Return the preferred release artifact for the current platform."""
+
+    platform_name = platform or sys.platform
+    return RELEASE_ASSETS_BY_PLATFORM.get(platform_name, WINDOWS_RELEASE_ASSET)
 
 
 def fetch_latest_release() -> ReleaseInfo:
