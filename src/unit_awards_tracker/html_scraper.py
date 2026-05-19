@@ -15,6 +15,7 @@ from unit_awards_tracker.models import AwardRecord, Member
 from unit_awards_tracker.text_utils import clean_status_text, parse_award_date
 
 HtmlFetcher = Callable[[str], str]
+ProgressCallback = Callable[[int, int, str], None]
 _HAS_TEXT_PATTERN = re.compile(
     r""":has-text\((?P<quote>["'])(?P<text>.*?)(?P=quote)\)"""
 )
@@ -27,9 +28,11 @@ class HtmlUnitRosterScraper:
         self,
         config: ScraperConfig | None = None,
         fetcher: HtmlFetcher | None = None,
+        progress_callback: ProgressCallback | None = None,
     ) -> None:
         self._config = config or ScraperConfig()
         self._fetcher = fetcher or fetch_html
+        self._progress_callback = progress_callback
 
     def scrape(self, roster_url: str) -> list[Member]:
         """Scrape active-duty members from a roster URL."""
@@ -37,7 +40,16 @@ class HtmlUnitRosterScraper:
         roster_html = self._fetcher(roster_url)
         roster_soup = BeautifulSoup(roster_html, "html.parser")
         profile_links = self._collect_profile_links(roster_soup, roster_url)
-        return [self._scrape_profile(link) for link in profile_links]
+        members: list[Member] = []
+        total_profiles = len(profile_links)
+        for index, profile_link in enumerate(profile_links, start=1):
+            self._notify_progress(index, total_profiles, profile_link)
+            members.append(self._scrape_profile(profile_link))
+        return members
+
+    def _notify_progress(self, index: int, total: int, profile_url: str) -> None:
+        if self._progress_callback is not None:
+            self._progress_callback(index, total, profile_url)
 
     def _collect_profile_links(
         self,
@@ -131,7 +143,7 @@ class HtmlUnitRosterScraper:
 def fetch_html(url: str) -> str:
     """Fetch a URL and return its HTML body."""
 
-    request = Request(url, headers={"User-Agent": "unit-awards-tracker/0.4.0"})
+    request = Request(url, headers={"User-Agent": "unit-awards-tracker/0.5.0"})
     with urlopen(request, timeout=30) as response:
         charset = response.headers.get_content_charset() or "utf-8"
         return response.read().decode(charset, errors="replace")

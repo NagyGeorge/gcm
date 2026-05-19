@@ -11,8 +11,10 @@ from unit_awards_tracker.gui import (
     is_newer_version,
     next_ceremony_date,
     release_info_from_payload,
+    result_sort_key,
     version_parts,
 )
+from unit_awards_tracker.models import EligibilityResult, Member
 
 
 def test_load_gui_settings_uses_defaults_for_missing_file(tmp_path) -> None:
@@ -96,6 +98,28 @@ def test_release_info_from_payload_prefers_windows_asset() -> None:
     assert release.download_url == "https://example.test/windows.zip"
 
 
+def test_result_sort_key_orders_due_then_rank_then_name() -> None:
+    ceremony_date = date(2026, 6, 7)
+    results = [
+        _result("Sergeant", "Charlie", ceremony_date, eligible=True),
+        _result("Private First Class", "Bravo", ceremony_date, eligible=False),
+        _result("Corporal", "Delta", ceremony_date, eligible=True),
+        _result("Corporal", "Alpha", ceremony_date, eligible=True),
+    ]
+
+    ordered = sorted(results, key=result_sort_key)
+
+    ordered_values = [
+        (item.member.rank, item.member.name, item.eligible) for item in ordered
+    ]
+    assert ordered_values == [
+        ("Corporal", "Alpha", True),
+        ("Corporal", "Delta", True),
+        ("Sergeant", "Charlie", True),
+        ("Private First Class", "Bravo", False),
+    ]
+
+
 def test_unit_presets_include_supported_roster_sections() -> None:
     assert UNIT_PRESETS == (
         "First Battalion Headquarters",
@@ -141,3 +165,24 @@ def test_load_gui_settings_falls_back_from_custom_section_text(tmp_path) -> None
     settings = _load_settings(settings_path)
 
     assert settings.roster_section_text == default_gui_settings().roster_section_text
+
+
+def _result(
+    rank: str,
+    name: str,
+    ceremony_date: date,
+    eligible: bool,
+) -> EligibilityResult:
+    return EligibilityResult(
+        member=Member(
+            rank=rank,
+            name=name,
+            unit="Alpha Company",
+            profile_url=f"https://example.test/{name}",
+        ),
+        ceremony_date=ceremony_date,
+        last_gcm_date=None,
+        next_eligible_date=None,
+        eligible=eligible,
+        reason="test",
+    )

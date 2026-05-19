@@ -26,6 +26,27 @@ APP_NAME = "UnitAwardsTracker"
 DATE_FORMAT = "%Y-%m-%d"
 LATEST_RELEASE_API_URL = "https://api.github.com/repos/NagyGeorge/gcm/releases/latest"
 WINDOWS_RELEASE_ASSET = "GCMReport-Windows.zip"
+RANK_ORDER = {
+    "Recruit": 0,
+    "Private": 1,
+    "Private Second Class": 2,
+    "Private First Class": 3,
+    "Specialist": 4,
+    "Corporal": 5,
+    "Sergeant": 6,
+    "Staff Sergeant": 7,
+    "Sergeant First Class": 8,
+    "Master Sergeant": 9,
+    "First Sergeant": 10,
+    "Sergeant Major": 11,
+    "Command Sergeant Major": 12,
+    "Second Lieutenant": 13,
+    "First Lieutenant": 14,
+    "Captain": 15,
+    "Major": 16,
+    "Lieutenant Colonel": 17,
+    "Colonel": 18,
+}
 UNIT_PRESETS = (
     "First Battalion Headquarters",
     "Alpha Company Headquarters",
@@ -121,6 +142,7 @@ class GcmGui(tk.Tk):
                 value=settings.include_non_active_duty
             ),
             "open_award_tab": tk.BooleanVar(value=settings.open_award_tab),
+            "show_due_only": tk.BooleanVar(value=False),
         }
 
     def _build_ui(self) -> None:
@@ -148,6 +170,12 @@ class GcmGui(tk.Tk):
             options,
             text="Open award tab before reading awards",
             variable=self._variables["open_award_tab"],
+        ).pack(side=tk.LEFT, padx=(18, 0))
+        ttk.Checkbutton(
+            options,
+            text="Show due only",
+            variable=self._variables["show_due_only"],
+            command=self._refresh_results_table,
         ).pack(side=tk.LEFT, padx=(18, 0))
 
         controls = ttk.Frame(form)
@@ -383,7 +411,10 @@ class GcmGui(tk.Tk):
                 open_award_tab=settings.open_award_tab,
                 headless=True,
             )
-            members = HtmlUnitRosterScraper(config).scrape(settings.roster_url)
+            members = HtmlUnitRosterScraper(
+                config,
+                progress_callback=self._report_profile_progress,
+            ).scrape(settings.roster_url)
             self._worker_messages.put(
                 ("log", f"Collected {len(members)} member profiles.")
             )
@@ -394,6 +425,16 @@ class GcmGui(tk.Tk):
             self._worker_messages.put(("done", (results, output_path)))
         except Exception as exc:  # noqa: BLE001
             self._worker_messages.put(("error", exc))
+
+    def _report_profile_progress(
+        self,
+        index: int,
+        total: int,
+        profile_url: str,
+    ) -> None:
+        self._worker_messages.put(
+            ("progress", f"Scraping profile {index} of {total}: {profile_url}")
+        )
 
     def _poll_worker_messages(self) -> None:
         while True:
@@ -407,17 +448,29 @@ class GcmGui(tk.Tk):
             elif message_type == "done":
                 results, output_path = payload
                 self._results = list(results)
-                self._populate_results(self._results)
+                self._refresh_results_table()
                 due_count = sum(result.eligible for result in self._results)
                 self._summary.configure(
                     text=f"{due_count} due / {len(self._results)} total"
                 )
                 self._append_log(f"Wrote report to {output_path}.")
+                if not self._results:
+                    self._append_log("No members were found for the selected preset.")
+                    messagebox.showwarning(
+                        "No members found",
+                        (
+                            "No members were found for the selected unit preset. "
+                            "The roster page may have changed or the preset may not "
+                            "currently contain active-duty personnel."
+                        ),
+                    )
                 self._set_running(False)
             elif message_type == "error":
                 self._set_running(False)
                 self._append_log(f"Error: {payload}")
                 messagebox.showerror("Report failed", str(payload))
+            elif message_type == "progress":
+                self._append_log(str(payload))
             elif message_type == "update_done":
                 self._handle_update_result(payload)
             elif message_type == "update_error":
@@ -427,15 +480,17 @@ class GcmGui(tk.Tk):
 
         self.after(100, self._poll_worker_messages)
 
+    def _refresh_results_table(self) -> None:
+        for item in self._table.get_children():
+            self._table.delete(item)
+
+        results = self._results
+        if self._variables["show_due_only"].get():
+            results = [result for result in results if result.eligible]
+        self._populate_results(results)
+
     def _populate_results(self, results: list[EligibilityResult]) -> None:
-        for result in sorted(
-            results,
-            key=lambda item: (
-                not item.eligible,
-                item.member.rank,
-                item.member.name,
-            ),
-        ):
+        for result in sorted(results, key=result_sort_key):
             member = result.member
             self._table.insert(
                 "",
@@ -619,6 +674,22 @@ def default_gui_settings(today: date | None = None) -> GuiSettings:
     return replace(
         GuiSettings(),
         ceremony_date=next_ceremony_date(today).isoformat(),
+    )
+
+
+def rank_sort_value(rank: str) -> int:
+    """Return a numeric sort value for rank text."""
+
+    return RANK_ORDER.get(rank.strip(), len(RANK_ORDER))
+
+
+def result_sort_key(result: EligibilityResult) -> tuple[bool, int, str]:
+    """Return the table sort key for an eligibility result."""
+
+    return (
+        not result.eligible,
+        rank_sort_value(result.member.rank),
+        result.member.name.lower(),
     )
 
 

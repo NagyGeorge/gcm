@@ -114,3 +114,40 @@ def test_html_scraper_supports_has_text_descendant_selector() -> None:
     assert member.rank == "Private First Class"
     assert member.name == "John Mitchell"
     assert member.time_in_service_text == "2 months, 20 days"
+
+
+def test_html_scraper_reports_profile_progress() -> None:
+    pages = {
+        "https://example.test/roster": """
+            <section class="card">
+              <h2>First Squad</h2>
+              <table>
+                <tr>
+                  <td>Active Duty</td>
+                  <td><a href="/milhq/soldier/1">One</a></td>
+                </tr>
+                <tr>
+                  <td>Active Duty</td>
+                  <td><a href="/milhq/soldier/2">Two</a></td>
+                </tr>
+              </table>
+            </section>
+        """,
+        "https://example.test/milhq/soldier/1": "<main></main>",
+        "https://example.test/milhq/soldier/2": "<main></main>",
+    }
+    progress: list[tuple[int, int, str]] = []
+    scraper = HtmlUnitRosterScraper(
+        ScraperConfig(roster_section_selector="section.card"),
+        fetcher=pages.__getitem__,
+        progress_callback=lambda index, total, url: progress.append(
+            (index, total, url)
+        ),
+    )
+
+    scraper.scrape("https://example.test/roster")
+
+    assert progress == [
+        (1, 2, "https://example.test/milhq/soldier/1"),
+        (2, 2, "https://example.test/milhq/soldier/2"),
+    ]
