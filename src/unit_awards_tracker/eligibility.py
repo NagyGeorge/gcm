@@ -72,6 +72,17 @@ def is_due_by_ceremony_month(next_eligible_date: date, ceremony_date: date) -> b
     )
 
 
+def initial_gcm_eligible_date(member: Member, ceremony_date: date) -> date | None:
+    """Return the member's initial GCM eligibility date from current TIS."""
+
+    tis = parse_time_in_service(member.time_in_service_text)
+    if tis is None:
+        return None
+
+    service_start_date = ceremony_date - tis
+    return service_start_date + relativedelta(months=GCM_INTERVAL_MONTHS)
+
+
 def calculate_gcm_eligibility(
     member: Member,
     ceremony_date: date,
@@ -79,6 +90,20 @@ def calculate_gcm_eligibility(
     """Calculate GCM eligibility for a member against a ceremony date."""
 
     last_gcm_date = newest_gcm_date(member.awards)
+    initial_eligible_date = initial_gcm_eligible_date(member, ceremony_date)
+    if initial_eligible_date is not None and not is_due_by_ceremony_month(
+        initial_eligible_date,
+        ceremony_date,
+    ):
+        return EligibilityResult(
+            member=member,
+            ceremony_date=ceremony_date,
+            last_gcm_date=last_gcm_date,
+            next_eligible_date=initial_eligible_date,
+            eligible=False,
+            reason="Current time in service is under the 3-month GCM requirement.",
+        )
+
     if last_gcm_date is not None:
         next_eligible_date = last_gcm_date + relativedelta(months=GCM_INTERVAL_MONTHS)
         eligible = is_due_by_ceremony_month(next_eligible_date, ceremony_date)
@@ -96,8 +121,7 @@ def calculate_gcm_eligibility(
             reason=reason,
         )
 
-    tis = parse_time_in_service(member.time_in_service_text)
-    if tis is None:
+    if initial_eligible_date is None:
         return EligibilityResult(
             member=member,
             ceremony_date=ceremony_date,
@@ -107,9 +131,7 @@ def calculate_gcm_eligibility(
             reason="Missing or unparseable time in service.",
         )
 
-    service_start_date = ceremony_date - tis
-    next_eligible_date = service_start_date + relativedelta(months=GCM_INTERVAL_MONTHS)
-    eligible = is_due_by_ceremony_month(next_eligible_date, ceremony_date)
+    eligible = is_due_by_ceremony_month(initial_eligible_date, ceremony_date)
     reason = (
         "No prior GCM and initial eligibility falls on or before the ceremony month."
         if eligible
@@ -119,7 +141,7 @@ def calculate_gcm_eligibility(
         member=member,
         ceremony_date=ceremony_date,
         last_gcm_date=None,
-        next_eligible_date=next_eligible_date,
+        next_eligible_date=initial_eligible_date,
         eligible=eligible,
         reason=reason,
     )

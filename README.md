@@ -106,6 +106,7 @@ The workflow also supports manual runs from GitHub Actions for test builds.
 - Good Conduct Medal eligibility recurs every 3 calendar months.
 - Members with no prior GCM become eligible after 3 months time in service.
 - Members with a prior GCM become eligible 3 months after the most recent GCM.
+- Members with current time in service under 3 months are not due a GCM.
 - If eligibility falls at any point in the ceremony month, the member is due at
   that month's ceremony.
 - Eligibility is calculated against the supplied ceremony month, not the current date.

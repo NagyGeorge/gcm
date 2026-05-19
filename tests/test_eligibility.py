@@ -102,6 +102,26 @@ def test_last_gcm_due_after_ceremony_month_is_not_eligible() -> None:
     assert result.next_eligible_date == date(2026, 7, 1)
 
 
+def test_current_tis_under_three_months_blocks_prior_gcm_recurrence() -> None:
+    result = calculate_gcm_eligibility(
+        _member(
+            time_in_service_text="2 months",
+            awards=(
+                AwardRecord(
+                    name="Good Conduct Medal",
+                    awarded_date=date(2025, 5, 18),
+                ),
+            ),
+        ),
+        date(2026, 5, 18),
+    )
+
+    assert result.eligible is False
+    assert result.last_gcm_date == date(2025, 5, 18)
+    assert result.next_eligible_date == date(2026, 6, 18)
+    assert "3-month GCM requirement" in result.reason
+
+
 def test_missing_tis_without_prior_gcm_is_not_eligible() -> None:
     result = calculate_gcm_eligibility(
         _member(time_in_service_text=None),
